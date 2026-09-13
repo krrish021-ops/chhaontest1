@@ -1,97 +1,49 @@
-import type {
-  HeatmapGeoJSON,
-  CellSummary,
-  CellExplanation,
-  ScenarioRequest,
-  ScenarioResponse,
-  CityInfo,
-} from './types';
+import { CityInfo, CellSummary, CellExplanation, ScenarioRequest, ScenarioResponse } from "./types";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
-  console.log('[API]', init?.method || 'GET', url);
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers || {}),
-      },
-    });
-  } catch (err: any) {
-    console.error('[API] Network error:', err);
-    throw new Error(
-      `Cannot reach API at ${API_BASE_URL}. Is the backend running? (uvicorn api.main:app --port 8000)`
-    );
-  }
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    console.error('[API] Error', res.status, body);
-    throw new Error(`API ${res.status}: ${body || res.statusText}`);
-  }
-
+export async function fetchCities(): Promise<CityInfo[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cities`);
+  if (!res.ok) throw new Error("Failed to fetch cities");
   return res.json();
 }
 
-export async function fetchCities(): Promise<CityInfo[]> {
-  return apiFetch<CityInfo[]>('/api/v1/cities');
+export async function fetchAoi(cityId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/aoi/${cityId}`);
+  if (!res.ok) throw new Error(`Failed to fetch AOI for ${cityId}`);
+  return res.json();
 }
 
-export async function fetchLayerGeoJSON(
-  cityId: string
-): Promise<HeatmapGeoJSON> {
-  // Backend may return either a FeatureCollection directly OR wrapped
-  const data = await apiFetch<any>(`/api/v1/layers/${cityId}`);
-
-  // Normalize response shape
-  if (data && data.type === 'FeatureCollection') {
-    return data as HeatmapGeoJSON;
-  }
-  if (data && data.geojson && data.geojson.type === 'FeatureCollection') {
-    return data.geojson as HeatmapGeoJSON;
-  }
-  if (data && data.features) {
-    return { type: 'FeatureCollection', features: data.features };
-  }
-
-  console.warn('[API] Unexpected layers response shape:', data);
-  throw new Error('Layers endpoint returned unexpected format');
+export async function fetchHeatmapGeoJSON(cityId: string = "nagpur") {
+  const res = await fetch(`${API_BASE}/api/v1/layers/${cityId}`);
+  if (!res.ok) throw new Error(`Failed to fetch layers for ${cityId}`);
+  return res.json();
 }
 
-export async function fetchCells(
-  cityId: string,
-  limit: number = 50
-): Promise<CellSummary[]> {
-  const data = await apiFetch<any>(
-    `/api/v1/cells/${cityId}?limit=${limit}`
-  );
+// Alias for backwards compatibility
+export const fetchHeatmap = fetchHeatmapGeoJSON;
 
-  // Normalize: might be array or {cells: [...]}
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.cells)) return data.cells;
-  if (data && Array.isArray(data.items)) return data.items;
-
-  console.warn('[API] Unexpected cells response shape:', data);
-  return [];
+export async function fetchCellRankings(cityId: string = "nagpur", sortBy: string = "suhii_night"): Promise<CellSummary[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cells/${cityId}?sort_by=${sortBy}&ascending=false`);
+  if (!res.ok) throw new Error(`Failed to fetch rankings for ${cityId}`);
+  return res.json();
 }
 
-export async function fetchCellExplanation(
-  cellId: string
-): Promise<CellExplanation> {
-  return apiFetch<CellExplanation>(`/api/v1/cell/${cellId}/explain`);
+// Alias for backwards compatibility
+export const fetchCells = fetchCellRankings;
+
+export async function fetchCellExplanation(cellId: string): Promise<CellExplanation> {
+  const res = await fetch(`${API_BASE}/api/v1/cell/${cellId}/explain`);
+  if (!res.ok) throw new Error(`Failed to fetch SHAP explanation for ${cellId}`);
+  return res.json();
 }
 
-export async function evaluateScenario(
-  request: ScenarioRequest
-): Promise<ScenarioResponse> {
-  return apiFetch<ScenarioResponse>('/api/v1/scenario/evaluate', {
-    method: 'POST',
-    body: JSON.stringify(request),
+export async function evaluateScenario(payload: ScenarioRequest): Promise<ScenarioResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/scenario/evaluate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
+  if (!res.ok) throw new Error("Scenario evaluation failed");
+  return res.json();
 }

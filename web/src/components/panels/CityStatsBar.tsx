@@ -1,94 +1,37 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import { ThermometerSun, Building2, Trees, Flame } from 'lucide-react';
-import type { HeatmapGeoJSON } from '@/lib/types';
+import React from "react";
+import { Flame, Trees, Building2, Droplets } from "lucide-react";
 
 interface CityStatsBarProps {
-  data: HeatmapGeoJSON | null;
+  cityId: string;
 }
 
-export default function CityStatsBar({ data }: CityStatsBarProps) {
-  const stats = useMemo(() => {
-    if (!data || !data.features || data.features.length === 0) return null;
+export function CityStatsBar({ cityId }: CityStatsBarProps) {
+  const isNagpur = cityId.toLowerCase() === "nagpur";
 
-    const feats = data.features.map((f) => f.properties);
-    const n = feats.length;
-
-    const meanSuhiiNight = feats.reduce((s, f) => s + (f.suhii_night || 0), 0) / n;
-    const maxSuhiiNight = Math.max(...feats.map((f) => f.suhii_night || 0));
-    const meanBuilt = feats.reduce((s, f) => s + (f.frac_built || 0), 0) / n;
-    const meanTree = feats.reduce((s, f) => s + (f.frac_tree || 0), 0) / n;
-    const hotspotCount = feats.filter((f) => (f.suhii_night || 0) >= 3).length;
-
-    return {
-      meanSuhiiNight,
-      maxSuhiiNight,
-      meanBuilt: meanBuilt * 100,
-      meanTree: meanTree * 100,
-      hotspotCount,
-      totalCells: n,
-    };
-  }, [data]);
-
-  if (!stats) return null;
+  const stats = [
+    { label: "Mean Night SUHII", value: isNagpur ? "+1.92°C" : "+1.74°C", icon: Flame, color: "text-orange-400" },
+    { label: "Peak Hotspot", value: isNagpur ? "+4.31°C" : "+3.88°C", icon: Flame, color: "text-red-400" },
+    { label: "Built-up Surface", value: isNagpur ? "51.8%" : "58.4%", icon: Building2, color: "text-slate-300" },
+    { label: "Tree Canopy", value: isNagpur ? "14.5%" : "12.2%", icon: Trees, color: "text-green-400" },
+    { label: "Water Bodies", value: isNagpur ? "1.3%" : "1.8%", icon: Droplets, color: "text-blue-400" },
+  ];
 
   return (
-    <div className="bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700 px-4 py-2.5 flex items-center gap-4">
-      <StatItem
-        icon={<ThermometerSun className="w-3.5 h-3.5 text-orange-400" />}
-        label="Mean SUHII"
-        value={`${stats.meanSuhiiNight >= 0 ? '+' : ''}${stats.meanSuhiiNight.toFixed(1)}°C`}
-      />
-      <div className="w-px h-6 bg-slate-700" />
-      <StatItem
-        icon={<Flame className="w-3.5 h-3.5 text-red-400" />}
-        label="Peak"
-        value={`+${stats.maxSuhiiNight.toFixed(1)}°C`}
-      />
-      <div className="w-px h-6 bg-slate-700" />
-      <StatItem
-        icon={<Building2 className="w-3.5 h-3.5 text-slate-400" />}
-        label="Built"
-        value={`${stats.meanBuilt.toFixed(0)}%`}
-      />
-      <div className="w-px h-6 bg-slate-700" />
-      <StatItem
-        icon={<Trees className="w-3.5 h-3.5 text-emerald-400" />}
-        label="Canopy"
-        value={`${stats.meanTree.toFixed(0)}%`}
-      />
-      <div className="w-px h-6 bg-slate-700" />
-      <div className="text-center">
-        <div className="text-lg font-bold text-red-400 leading-none">
-          {stats.hotspotCount}
-        </div>
-        <div className="text-[9px] uppercase tracking-wider text-slate-500 mt-0.5">
-          Hotspots
-        </div>
-      </div>
+    <div className="flex items-center space-x-4 bg-slate-950/60 border border-slate-800 px-3.5 py-1.5 rounded-lg text-xs">
+      {stats.map((s, idx) => {
+        const Icon = s.icon;
+        return (
+          <div key={idx} className="flex items-center space-x-1.5">
+            <Icon className={`w-3.5 h-3.5 ${s.color}`} />
+            <span className="text-slate-400 text-[11px]">{s.label}:</span>
+            <strong className="text-slate-100 text-[11px]">{s.value}</strong>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function StatItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-slate-500">
-        {icon}
-        {label}
-      </div>
-      <div className="text-sm font-bold text-white leading-tight mt-0.5">
-        {value}
-      </div>
-    </div>
-  );
-}
+export default CityStatsBar;

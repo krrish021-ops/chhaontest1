@@ -1,171 +1,237 @@
 """
-Extract MODIS Land Surface Temperature for Nagpur.
-===================================================
-Uses Google Earth Engine server-side batch reduction (reduceRegions).
+Multi-year MODIS LST extraction for Nagpur (or any configured city).
+Extracts monthly composites for 2020-2024, March-June (pre-monsoon peak heat).
+Uses server-side batch reduceRegions — all grid cells per call, ~3 sec each.
+
+FIX v2: Relaxed QA mask — mandatory QA <= 1 (accepts "other quality" pixels
+that are standard over India at night). Previous mask required == 0 which
+rejected 100% of night observations.
+
+Outputs:
+  data/tables/nagpur_monthly_lst_multiyear.parquet
 """
 
-import os
 import ee
 import pandas as pd
 import geopandas as gpd
-import shapely.geometry
+import json
+import numpy as np
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Load .env and initialize Earth Engine
-load_dotenv()
-GEE_PROJECT = os.getenv("GEE_PROJECT")
-ee.Initialize(project=GEE_PROJECT)
-print(f"✅ Earth Engine connected: project={GEE_PROJECT}")
+ee.Initialize(project="chhaon-508513")
 
-CITY = "nagpur"
-BBOX = [78.90, 21.05, 79.25, 21.25]
-START_YEAR = 2020
-END_YEAR = 2025
+DATA_DIR = Path("data/tables")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+CITY_NAME = "Nagpur"
+GRID_PATH = "data/boundaries/nagpur_grid.geojson"
+
+YEARS = [2020, 2021, 2022, 2023, 2024]
 MONTHS = [3, 4, 5, 6]
-OUT_DIR = Path("data/tables")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+MONTH_NAMES = {3: "Mar", 4: "Apr", 5: "May", 6: "Jun"}
+SEASON_TAG = "pre_monsoon"
+MONSOON_MONTHS = {6, 7, 8, 9}
 
 
-def geodf_to_ee_fc(gdf):
-    """Convert GeoDataFrame grid to Earth Engine FeatureCollection safely."""
-    features = []
-    for idx, row in gdf.iterrows():
-        geo_dict = shapely.geometry.mapping(row.geometry)
-        ee_geo = ee.Geometry(geo_dict)
-        props = {
-            "cell_id": str(row["cell_id"]),
-            "lon_center": float(row["lon_center"]),
-            "lat_center": float(row["lat_center"])
-        }
-        features.append(ee.Feature(ee_geo, props))
-    return ee.FeatureCollection(features)
+def qa_mask_day(img):
+    """
+    QA mask for MODIS daytime LST.
+    Bits 0-1 (mandatory quality): <= 1 (good OR acceptable)
+    Bits 2-3 (data quality): <= 1 (good or acceptable)
+
+    FIX: Changed mandatory from .eq(0) to .lte(1).
+    Over India, mandatory QA 01 ("produced, other quality") is common
+    due to atmospheric dust/haze. Rejecting it loses most observations.
+    """
+    qc = img.select("QC_Day")
+    mandatory = qc.bitwiseAnd(0b11)
+    quality = qc.bitwiseAnd(0b1100).rightShift(2)
+    good = mandatory.lte(1).And(quality.lte(1))
+
+    lst_k = img.select("LST_Day_1km").multiply(0.02)
+    lst_c = lst_k.subtract(273.15)
+    return lst_c.updateMask(good).rename("lst_day")
 
 
-def get_monthly_lst_city(year, month, aoi):
-    """Get city-wide average LST for one month."""
-    start = f"{year}-{month:02d}-01"
-    end = f"{year}-{month + 1:02d}-01" if month < 12 else f"{year + 1}-01-01"
+def qa_mask_night(img):
+    """
+    QA mask for MODIS nighttime LST.
+    Same relaxed criteria as day.
 
-    modis = (
+    FIX: This is the critical change. Night LST over India almost always
+    has mandatory QA = 01, not 00. The old mask (.eq(0)) rejected 100%
+    of night pixels. The new mask (.lte(1)) accepts them.
+    """
+    qc = img.select("QC_Night")
+    mandatory = qc.bitwiseAnd(0b11)
+    quality = qc.bitwiseAnd(0b1100).rightShift(2)
+    good = mandatory.lte(1).And(quality.lte(1))
+
+    lst_k = img.select("LST_Night_1km").multiply(0.02)
+    lst_c = lst_k.subtract(273.15)
+    return lst_c.updateMask(good).rename("lst_night")
+
+
+def extract_month(year, month, grid_fc):
+    """Extract day + night LST for one month across all grid cells."""
+    start = ee.Date.fromYMD(year, month, 1)
+    end = start.advance(1, "month")
+
+    collection = (
         ee.ImageCollection("MODIS/061/MOD11A1")
-        .filterBounds(aoi)
+        .filterBounds(grid_fc.geometry())
         .filterDate(start, end)
     )
 
-    n_images = modis.size().getInfo()
+    day_images = collection.map(qa_mask_day)
+    day_composite = day_images.median()
 
-    # Median first, then convert Kelvin*50 to Celsius: C = (val * 0.02) - 273.15
-    lst_day = modis.select("LST_Day_1km").median().multiply(0.02).subtract(273.15)
-    lst_night = modis.select("LST_Night_1km").median().multiply(0.02).subtract(273.15)
+    night_images = collection.map(qa_mask_night)
+    night_composite = night_images.median()
 
-    stats_day = lst_day.reduceRegion(
-        reducer=ee.Reducer.mean(), geometry=aoi, scale=1000, maxPixels=1e9
-    ).getInfo()
+    day_count = day_images.count().rename("n_valid_day")
+    night_count = night_images.count().rename("n_valid_night")
 
-    stats_night = lst_night.reduceRegion(
-        reducer=ee.Reducer.mean(), geometry=aoi, scale=1000, maxPixels=1e9
-    ).getInfo()
+    combined = (
+        day_composite
+        .addBands(night_composite)
+        .addBands(day_count)
+        .addBands(night_count)
+    )
 
-    return {
-        "lst_day": round(stats_day.get("LST_Day_1km") or 45.0, 2),
-        "lst_night": round(stats_night.get("LST_Night_1km") or 30.0, 2),
-        "n_images": n_images,
-    }
+    extracted = combined.reduceRegions(
+        collection=grid_fc,
+        reducer=ee.Reducer.mean(),
+        scale=1000,
+    )
+
+    is_monsoon = 1 if month in MONSOON_MONTHS else 0
+
+    extracted = extracted.map(
+        lambda f: f.set(
+            {
+                "year": year,
+                "month": month,
+                "month_name": MONTH_NAMES.get(month, str(month)),
+                "season": SEASON_TAG,
+                "is_monsoon": is_monsoon,
+                "data_confidence": "high" if month not in MONSOON_MONTHS else "low_cloud_risk",
+            }
+        )
+    )
+
+    return extracted
 
 
 def main():
-    print("=" * 50)
-    print("  Chhaon — MODIS LST Batch Extraction")
-    print("=" * 50)
+    print("=" * 65)
+    print("  MULTI-YEAR MODIS LST EXTRACTION (v2 — relaxed QA)")
+    print(f"  City: {CITY_NAME}")
+    print(f"  Years: {YEARS}")
+    print(f"  Months: {[MONTH_NAMES[m] for m in MONTHS]}")
+    print(f"  QA fix: mandatory <= 1 (was == 0)")
+    print("=" * 65)
 
-    # 1. City-wide monthly averages
-    print("\n🌡️  City-wide monthly averages:")
-    print(f"   {'Year':>4} {'Month':>5} {'Day °C':>8} {'Night °C':>8} {'Clear days':>10}")
-    print("   " + "-" * 40)
+    print(f"\n[1/3] Loading grid from {GRID_PATH}...")
+    grid_gdf = gpd.read_file(GRID_PATH)
+    n_cells = len(grid_gdf)
+    print(f"  ✓ {n_cells} grid cells loaded")
 
-    aoi = ee.Geometry.Rectangle(BBOX)
-    city_data = []
+    grid_geojson = json.loads(grid_gdf.to_json())
+    grid_fc = ee.FeatureCollection(grid_geojson)
 
-    for year in range(START_YEAR, END_YEAR):
+    all_rows = []
+    total = len(YEARS) * len(MONTHS)
+    step = 0
+
+    for year in YEARS:
         for month in MONTHS:
+            step += 1
+            label = f"{year}-{MONTH_NAMES[month]}"
+            print(f"\n  [{step:2d}/{total}] {label} ...", end=" ", flush=True)
+
             try:
-                stats = get_monthly_lst_city(year, month, aoi)
-                city_data.append({"year": year, "month": month, **stats})
-                print(
-                    f"   {year} {month:>5} {stats['lst_day']:>8.1f} "
-                    f"{stats['lst_night']:>8.1f} {stats['n_images']:>10}"
-                )
+                extracted = extract_month(year, month, grid_fc)
+                info = extracted.getInfo()
+
+                for feat in info["features"]:
+                    p = feat["properties"]
+                    all_rows.append(
+                        {
+                            "cell_id": p.get("cell_id", ""),
+                            "year": year,
+                            "month": month,
+                            "month_name": MONTH_NAMES.get(month, ""),
+                            "season": SEASON_TAG,
+                            "is_monsoon": p.get("is_monsoon", 0),
+                            "data_confidence": p.get("data_confidence", ""),
+                            "lst_day": round(p.get("lst_day", np.nan), 2)
+                            if p.get("lst_day") is not None
+                            else np.nan,
+                            "lst_night": round(p.get("lst_night", np.nan), 2)
+                            if p.get("lst_night") is not None
+                            else np.nan,
+                            "n_valid_day": int(p.get("n_valid_day", 0) or 0),
+                            "n_valid_night": int(p.get("n_valid_night", 0) or 0),
+                        }
+                    )
+
+                day_vals = [
+                    r["lst_day"] for r in all_rows[-n_cells:] if pd.notna(r["lst_day"])
+                ]
+                night_vals = [
+                    r["lst_night"]
+                    for r in all_rows[-n_cells:]
+                    if pd.notna(r["lst_night"])
+                ]
+                d_avg = f"{sum(day_vals)/len(day_vals):.1f}" if day_vals else "N/A"
+                n_avg = f"{sum(night_vals)/len(night_vals):.1f}" if night_vals else "N/A"
+                d_pct = f"{len(day_vals)}/{n_cells}"
+                n_pct = f"{len(night_vals)}/{n_cells}"
+                print(f"Day {d_avg}°C ({d_pct}) | Night {n_avg}°C ({n_pct})  ✓")
+
+            except ee.EEException as e:
+                print(f"⚠ GEE ERROR: {e}")
             except Exception as e:
-                print(f"   {year} {month:>5}  ⚠️  Error: {e}")
+                print(f"⚠ ERROR: {e}")
 
-    city_df = pd.DataFrame(city_data)
-    city_path = OUT_DIR / f"{CITY}_monthly_lst.csv"
-    city_df.to_csv(city_path, index=False)
-    print(f"\n   ✅ City-wide data saved: {city_path}")
+    df = pd.DataFrame(all_rows)
 
-    # 2. Batch extraction for ALL grid cells (May 2024)
-    target_year = 2024
-    target_month = 5
-    print(f"\n🔲 Running batch extraction for ALL cells (May {target_year})...")
+    print(f"\n[2/3] Quality check...")
+    low_day = df[df["n_valid_day"] < 4]
+    low_night = df[df["n_valid_night"] < 4]
+    print(f"  Day:   {len(low_day)} cell-months with <4 valid obs"
+          f" ({100*len(low_day)/len(df):.1f}%)")
+    print(f"  Night: {len(low_night)} cell-months with <4 valid obs"
+          f" ({100*len(low_night)/len(df):.1f}%)")
 
-    grid = gpd.read_file("data/boundaries/nagpur_grid.geojson")
-    fc = geodf_to_ee_fc(grid)
+    monsoon_flagged = df[df["is_monsoon"] == 1]
+    if len(monsoon_flagged) > 0:
+        print(f"  ℹ {len(monsoon_flagged)} cell-months flagged as monsoon")
 
-    start = f"{target_year}-{target_month:02d}-01"
-    end = f"{target_year}-{target_month + 1:02d}-01"
+    out_path = DATA_DIR / "nagpur_monthly_lst_multiyear.parquet"
+    df.to_parquet(out_path, index=False)
 
-    modis = (
-        ee.ImageCollection("MODIS/061/MOD11A1")
-        .filterBounds(fc.geometry())
-        .filterDate(start, end)
-    )
-
-    lst_day = modis.select("LST_Day_1km").median().multiply(0.02).subtract(273.15).rename("lst_day")
-    lst_night = modis.select("LST_Night_1km").median().multiply(0.02).subtract(273.15).rename("lst_night")
-    combined = lst_day.addBands(lst_night)
-
-    # Server-side batch reduction
-    reduced = combined.reduceRegions(
-        collection=fc,
-        reducer=ee.Reducer.mean(),
-        scale=1000
-    ).getInfo()
-
-    records = []
-    for feat in reduced["features"]:
-        props = feat["properties"]
-        records.append({
-            "cell_id": props.get("cell_id"),
-            "lon": props.get("lon_center"),
-            "lat": props.get("lat_center"),
-            "year": target_year,
-            "month": target_month,
-            "lst_day": round(props.get("lst_day") or 45.0, 2),
-            "lst_night": round(props.get("lst_night") or 30.0, 2)
-        })
-
-    cell_df = pd.DataFrame(records)
-    cell_path = OUT_DIR / f"{CITY}_cell_lst_{target_year}_{target_month:02d}.parquet"
-    cell_df.to_parquet(cell_path, index=False)
-
-    print(f"   ✅ Per-cell data saved: {cell_path}")
-    print(f"   Cells processed: {len(cell_df)}")
-
-    if len(cell_df) > 0:
-        print(f"\n{'=' * 50}")
-        print(f"  Temperature Summary — Nagpur, May {target_year}")
-        print(f"{'=' * 50}")
-        print(
-            f"  Daytime LST:   {cell_df['lst_day'].mean():.1f}°C avg "
-            f"({cell_df['lst_day'].min():.1f} to {cell_df['lst_day'].max():.1f})"
-        )
-        print(
-            f"  Nighttime LST: {cell_df['lst_night'].mean():.1f}°C avg "
-            f"({cell_df['lst_night'].min():.1f} to {cell_df['lst_night'].max():.1f})"
-        )
-        print(f"{'=' * 50}")
+    print(f"\n[3/3] Saved to {out_path}")
+    print("=" * 65)
+    print("  RESULTS SUMMARY")
+    print("=" * 65)
+    print(f"  Total rows:       {len(df)}")
+    print(f"  Day coverage:     {df['lst_day'].notna().sum()}/{len(df)}"
+          f" ({100*df['lst_day'].notna().mean():.0f}%)")
+    print(f"  Night coverage:   {df['lst_night'].notna().sum()}/{len(df)}"
+          f" ({100*df['lst_night'].notna().mean():.0f}%)")
+    if df["lst_day"].notna().any():
+        print(f"  Day LST range:    {df['lst_day'].min():.1f} to"
+              f" {df['lst_day'].max():.1f} °C")
+    if df["lst_night"].notna().any():
+        print(f"  Night LST range:  {df['lst_night'].min():.1f} to"
+              f" {df['lst_night'].max():.1f} °C")
+    else:
+        print(f"  ⚠ Night LST still 100% null — QA fix may not have worked")
+    print("=" * 65)
 
 
 if __name__ == "__main__":
     main()
+

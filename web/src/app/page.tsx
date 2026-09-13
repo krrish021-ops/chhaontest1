@@ -1,212 +1,198 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import { FileText, Download, Building } from "lucide-react";
 
-import MapControls from '@/components/map/MapControls';
-import TimeMachine from '@/components/map/TimeMachine';
-import CellDetailPanel from '@/components/panels/CellDetailPanel';
-import RankingTable from '@/components/panels/RankingTable';
-import CityStatsBar from '@/components/panels/CityStatsBar';
-import SearchAndInfo from '@/components/panels/SearchAndInfo';
-import ScenarioPainter from '@/components/scenario/ScenarioPainter';
-import { fetchLayerGeoJSON, fetchCells } from '@/lib/api';
-import type {
-  HeatmapGeoJSON,
-  CellProperties,
-  CellSummary,
-  LayerSource,
-  TimeMode,
-  DisplayMode,
-  BasemapStyle,
-} from '@/lib/types';
-import { Info } from 'lucide-react';
+import { LayerSource, BasemapStyle } from "@/lib/types";
+import { fetchHeatmapGeoJSON, fetchCellRankings } from "@/lib/api";
 
-// Dynamic import with ssr: false prevents MapLibre from crashing Next.js SSR
-const HeatMap = dynamic(() => import('@/components/map/HeatMap'), {
+import { MapControls } from "@/components/map/MapControls";
+import { TimeMachine } from "@/components/map/TimeMachine";
+import { CellDetailPanel } from "@/components/panels/CellDetailPanel";
+import { RankingTable } from "@/components/panels/RankingTable";
+import { CityStatsBar } from "@/components/panels/CityStatsBar";
+import { SearchAndInfo } from "@/components/panels/SearchAndInfo";
+import { ScenarioPainter } from "@/components/scenario/ScenarioPainter";
+import { ReportModal } from "@/components/panels/ReportModal";
+
+// Load HeatMap strictly on client side (SSR safety)
+const HeatMap = dynamic(() => import("@/components/map/HeatMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full bg-slate-950 flex items-center justify-center text-cyan-400 text-sm font-mono animate-pulse">
-      Loading interactive map engine...
+    <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-400">
+      Loading Chhaon Urban Heat Intelligence Engine...
     </div>
   ),
 });
 
-const CITY_ID = 'nagpur';
-
 export default function DashboardPage() {
-  const [heatmapData, setHeatmapData] = useState<HeatmapGeoJSON | null>(null);
-  const [cells, setCells] = useState<CellSummary[]>([]);
-  const [selectedCell, setSelectedCell] = useState<CellProperties | null>(null);
-  const [showScenario, setShowScenario] = useState(false);
+  const [cityId, setCityId] = useState<string>("nagpur");
+  const [layerSource, setLayerSource] = useState<LayerSource>("observed");
+  const [basemapStyle, setBasemapStyle] = useState<BasemapStyle>("dark");
+  const [heatOpacity, setHeatOpacity] = useState<number>(0.85);
+  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+  const [isPainterOpen, setIsPainterOpen] = useState<boolean>(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
 
-  const [layerSource, setLayerSource] = useState<LayerSource>('observed');
-  const [timeMode, setTimeMode] = useState<TimeMode>('night');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('suhii');
-  const [basemapStyle, setBasemapStyle] = useState<BasemapStyle>('dark');
-  const [heatmapOpacity, setHeatmapOpacity] = useState<number>(0.65);
+  const [geojsonData, setGeojsonData] = useState<any>(null);
+  const [rankings, setRankings] = useState<any[]>([]);
 
-  const leftOpen = selectedCell !== null;
-
+  // Load city layers when cityId changes
   useEffect(() => {
-    fetchLayerGeoJSON(CITY_ID).then(setHeatmapData).catch(console.error);
-    fetchCells(CITY_ID, 50).then(setCells).catch(console.error);
-  }, []);
+    async function loadData() {
+      try {
+        setGeojsonData(null); // Reset before fetch to trigger clean re-render
+        setSelectedCellId(null);
+        
+        const geojson = await fetchHeatmapGeoJSON(cityId);
+        setGeojsonData(geojson);
 
-  const handleCellClick = (cell: CellProperties) => {
-    setSelectedCell(cell);
-    setShowScenario(false);
-  };
-
-  const handleSelectByCellId = (cellId: string) => {
-    const feature = heatmapData?.features.find(
-      (f) => String(f.properties.cell_id) === String(cellId)
-    );
-    if (feature) {
-      const p = feature.properties;
-      const n = (k: keyof typeof p, fb = 0) => {
-        const v = p[k];
-        const parsed = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
-        return Number.isFinite(parsed) ? parsed : fb;
-      };
-      setSelectedCell({
-        ...p,
-        cell_id: String(p.cell_id),
-        lat: n('lat'),
-        lon: n('lon'),
-        suhii_night: n('suhii_night'),
-        suhii_day: n('suhii_day'),
-        lst_day: n('lst_day'),
-        lst_night: n('lst_night'),
-        frac_built: n('frac_built'),
-        frac_tree: n('frac_tree'),
-        frac_water: n('frac_water'),
-      });
-      setShowScenario(false);
-      return;
+        const ranks = await fetchCellRankings(cityId);
+        setRankings(ranks);
+      } catch (err) {
+        console.error(`Failed to load data for ${cityId}:`, err);
+      }
     }
-
-    const row = cells.find((c) => String(c.cell_id) === String(cellId));
-    if (row) {
-      setSelectedCell({
-        cell_id: row.cell_id,
-        lat: row.lat,
-        lon: row.lon,
-        suhii_night: row.suhii_night,
-        suhii_day: row.suhii_day,
-        frac_built: row.frac_built,
-        frac_tree: row.frac_tree,
-        frac_water: row.frac_water,
-        lst_day: 0,
-        lst_night: 0,
-      });
-      setShowScenario(false);
-    }
-  };
-
-  const layerExplanation: Record<LayerSource, string> = {
-    observed: 'Satellite Observation: Real historical temperature recorded by NASA MODIS.',
-    ml_fit: "AI Model Fit: The LightGBM model's understanding of the current city.",
-    forecast_2031: 'AI Forecast: Projects 7 years of concrete sprawl and evaluates future heat.',
-    forecast_2041: 'AI Forecast: Projects 17 years of concrete sprawl and evaluates future heat.',
-  };
+    loadData();
+  }, [cityId]);
 
   return (
-    <div className="w-screen h-screen bg-slate-950 relative overflow-hidden">
-      {/* MAP — full background */}
-      <div className="absolute inset-0 z-0">
+    <main className="relative h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-100">
+      
+      {/* ── Top Header Navigation Bar ───────────────────────────────── */}
+      <header className="absolute top-0 left-0 right-0 z-30 flex h-14 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-4 backdrop-blur-md">
+        
+        {/* Brand & City Picker */}
+        <div className="flex items-center space-x-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-600 font-black text-white shadow-lg">
+            छां
+          </div>
+          <div>
+            <h1 className="text-sm font-bold tracking-tight text-white flex items-center space-x-2">
+              <span>Chhaon (छांव)</span>
+              <span className="rounded bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-orange-400 border border-orange-500/30">
+                v3.1
+              </span>
+            </h1>
+            <p className="text-[10px] text-slate-400">Urban Heat Intelligence for Indian Cities</p>
+          </div>
+
+          {/* City Switcher Dropdown */}
+          <div className="ml-4 flex items-center space-x-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1">
+            <Building className="w-3.5 h-3.5 text-orange-400" />
+            <select
+              value={cityId}
+              onChange={(e) => setCityId(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer"
+            >
+              <option value="nagpur" className="bg-slate-900 text-white">Nagpur, MH</option>
+              <option value="pune" className="bg-slate-900 text-white">Pune, MH</option>
+            </select>
+          </div>
+        </div>
+
+        {/* City Stats Bar */}
+        <div className="hidden xl:block">
+          <CityStatsBar cityId={cityId} />
+        </div>
+
+        {/* Header Action Buttons */}
+        <div className="flex items-center space-x-2.5">
+          <SearchAndInfo onSelectCell={(id) => setSelectedCellId(id)} />
+
+          {/* Export PDF Button */}
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="flex items-center space-x-1.5 rounded-lg bg-orange-600/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-orange-500 transition"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Thermal Audit PDF</span>
+          </button>
+
+          {/* Export GeoJSON Button */}
+          <a
+            href={`http://localhost:8000/api/v1/export/${cityId}?format=geojson`}
+            download
+            className="flex items-center space-x-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">GeoJSON</span>
+          </a>
+        </div>
+      </header>
+
+      {/* ── Interactive Map Viewport ────────────────────────────────── */}
+      <div className="absolute inset-0 pt-14">
         <HeatMap
-          data={heatmapData}
+          geojsonData={geojsonData}
           layerSource={layerSource}
-          timeMode={timeMode}
-          displayMode={displayMode}
           basemapStyle={basemapStyle}
-          heatmapOpacity={heatmapOpacity}
-          selectedCellId={selectedCell?.cell_id || null}
-          onCellClick={handleCellClick}
+          opacity={heatOpacity}
+          selectedCellId={selectedCellId}
+          onSelectCell={(id) => setSelectedCellId(id)}
         />
       </div>
 
-      {/* TOP-LEFT: Brand + Search (only when left panel closed) */}
-      {!leftOpen && (
-        <div className="absolute top-3 left-3 z-30 flex flex-col gap-2 pointer-events-auto">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-3 bg-slate-900/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-700 px-4 py-2.5">
-              <div>
-                <div className="flex items-baseline gap-2">
-                  <h1 className="text-lg font-bold bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">
-                    Chhaon
-                  </h1>
-                  <span className="text-sm text-slate-400">(छांव)</span>
-                </div>
-                <p className="text-xs text-slate-500 -mt-0.5">Nagpur Urban Heat AI</p>
-              </div>
-            </div>
-            <SearchAndInfo cells={cells} onSelectCell={handleSelectByCellId} />
-          </div>
-          <div className="inline-flex items-center gap-2 bg-cyan-950/80 border border-cyan-500/30 text-cyan-200 text-xs px-3 py-1.5 rounded-lg shadow-lg backdrop-blur-md max-w-md">
-            <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            {layerExplanation[layerSource]}
-          </div>
-        </div>
-      )}
-
-      {/* TOP-RIGHT: City Stats */}
-      <div className="absolute top-3 right-3 z-30 pointer-events-auto">
-        <CityStatsBar data={heatmapData} />
-      </div>
-
-      {/* LEFT PANEL: Cell detail or Scenario */}
-      {selectedCell && !showScenario && (
-        <div className="absolute top-3 left-3 bottom-[280px] z-40 pointer-events-auto">
-          <CellDetailPanel
-            cell={selectedCell}
-            onClose={() => setSelectedCell(null)}
-            onStartScenario={() => setShowScenario(true)}
-          />
-        </div>
-      )}
-      {selectedCell && showScenario && (
-        <div className="absolute top-3 left-3 bottom-[280px] z-40 pointer-events-auto">
-          <ScenarioPainter
-            cell={selectedCell}
-            onClose={() => setShowScenario(false)}
-          />
-        </div>
-      )}
-
-      {/* RIGHT CONTROLS — below stats bar */}
-      <div className="absolute top-[72px] right-3 z-30 pointer-events-auto">
+      {/* ── Map Controls & Layer Toggles (Top-Right) ────────────────── */}
+      <div className="absolute top-16 right-3 z-20">
         <MapControls
           layerSource={layerSource}
-          onLayerSourceChange={setLayerSource}
-          timeMode={timeMode}
-          onTimeModeChange={setTimeMode}
-          displayMode={displayMode}
-          onDisplayModeChange={setDisplayMode}
+          onSelectLayerSource={(s) => setLayerSource(s)}
           basemapStyle={basemapStyle}
-          onBasemapStyleChange={setBasemapStyle}
-          heatmapOpacity={heatmapOpacity}
-          onHeatmapOpacityChange={setHeatmapOpacity}
+          onSelectBasemapStyle={(b) => setBasemapStyle(b)}
+          opacity={heatOpacity}
+          onChangeOpacity={(o) => setHeatOpacity(o)}
         />
       </div>
 
-      {/* TIME MACHINE — centered, above ranking */}
-      <div className="absolute bottom-[280px] left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+      {/* ── Cell Detail Panel / AI Diagnosis (Top-Left) ─────────────── */}
+      {selectedCellId && (
+        <div className="absolute top-16 left-3 bottom-[280px] z-20 w-84 max-w-[90vw]">
+          <CellDetailPanel
+            cellId={selectedCellId}
+            cityId={cityId}
+            onClose={() => setSelectedCellId(null)}
+            onOpenPainter={() => setIsPainterOpen(true)}
+          />
+        </div>
+      )}
+
+      {/* ── Scenario Painter Studio ─────────────────────────────────── */}
+      {isPainterOpen && selectedCellId && (
+        <div className="absolute top-16 left-3 z-30 w-84 max-w-[90vw]">
+          <ScenarioPainter
+            cellId={selectedCellId}
+            cityId={cityId}
+            onClose={() => setIsPainterOpen(false)}
+          />
+        </div>
+      )}
+
+      {/* ── Time Machine Animation (Bottom-Center) ──────────────────── */}
+      <div className="absolute bottom-[280px] left-1/2 -translate-x-1/2 z-20">
         <TimeMachine
-          layerSource={layerSource}
-          onLayerSourceChange={setLayerSource}
+          currentSource={layerSource}
+          onSelectSource={(s) => setLayerSource(s)}
         />
       </div>
 
-      {/* RANKING TABLE — bottom strip */}
-      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto h-[270px]">
+      {/* ── Hotspot Ranking Table (Bottom Drawer) ───────────────────── */}
+      <div className="absolute bottom-0 left-0 right-0 h-[270px] z-20">
         <RankingTable
-          cells={cells}
-          selectedCellId={selectedCell?.cell_id || null}
-          onRowClick={handleSelectByCellId}
+          rankings={rankings}
+          selectedCellId={selectedCellId}
+          onSelectCell={(id) => setSelectedCellId(id)}
         />
       </div>
-    </div>
+
+      {/* ── Thermal Audit PDF Generator Modal ───────────────────────── */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        cityId={cityId}
+      />
+
+    </main>
   );
 }

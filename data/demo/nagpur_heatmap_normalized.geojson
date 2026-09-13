@@ -1,6 +1,6 @@
 {
 "type": "FeatureCollection",
-"name": "nagpur_heatmap",
+"name": "nagpur_heatmap_normalized",
 "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
 "features": [
 { "type": "Feature", "properties": { "cell_id": "C0485", "lon_center": 79.145, "lat_center": 21.105, "suhii_day": -2.99, "suhii_night": 3.17, "suhii_day_normalized": -1.035, "suhii_night_normalized": 2.065, "lst_day": 37.06, "lst_night": 28.44, "frac_built": 0.899, "frac_tree": 0.005, "frac_water": 0.0, "frac_crop": 0.083, "frac_grass": 0.012, "ndvi": 0.252, "ndbi": 0.02, "mndwi": -0.303, "albedo": 0.202, "building_height_mean": 0.0, "night_lights_mean": 0.0, "svf_proxy": 1.0, "suhii_night_ml": 2.065, "suhii_night_2031": 2.48, "suhii_night_2041": 3.24 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 79.140000000000128, 21.11 ], [ 79.142301106589699, 21.11 ], [ 79.1423549, 21.1094874 ], [ 79.1421798, 21.108863 ], [ 79.1421267, 21.1082993 ], [ 79.1421994, 21.1081844 ], [ 79.1422315, 21.1080014 ], [ 79.1420491, 21.107427 ], [ 79.1407656, 21.1075626 ], [ 79.140000000000128, 21.107225878721763 ], [ 79.140000000000128, 21.11 ] ] ] } },

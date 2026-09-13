@@ -1,271 +1,157 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import { ChevronUp, ChevronDown, Download, ChevronsUpDown } from 'lucide-react';
-import type { CellSummary } from '@/lib/types';
+import React, { useState } from "react";
+import { Download, ChevronUp, ChevronDown, Flame } from "lucide-react";
+import { CellSummary } from "@/lib/types";
 
 interface RankingTableProps {
-  cells: CellSummary[];
+  rankings: CellSummary[];
   selectedCellId: string | null;
-  onRowClick: (cellId: string) => void;
+  onSelectCell: (cellId: string) => void;
 }
 
-type SortKey = 'suhii_night' | 'suhii_day' | 'frac_built' | 'frac_tree';
-type SortDir = 'asc' | 'desc';
+export function RankingTable({ rankings, selectedCellId, onSelectCell }: RankingTableProps) {
+  const [filter, setFilter] = useState<"all" | "hot" | "cool" | "canopy">("all");
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-export default function RankingTable({
-  cells,
-  selectedCellId,
-  onRowClick,
-}: RankingTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('suhii_night');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [collapsed, setCollapsed] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'hot' | 'cool' | 'green'>('all');
+  const filtered = rankings.filter((r) => {
+    if (filter === "hot") return r.suhii_night >= 2.5;
+    if (filter === "cool") return r.suhii_night < 1.0;
+    if (filter === "canopy") return (r.frac_tree || 0) >= 0.2;
+    return true;
+  });
 
-  const filteredAndSorted = useMemo(() => {
-    let result = [...cells];
+  const exportCSV = () => {
+    const headers = ["Cell_ID", "Night_SUHII_degC", "Day_LST_degC", "Night_LST_degC", "Built_Fraction", "Tree_Fraction"];
+    const rows = rankings.map((r) => [
+      r.cell_id,
+      r.suhii_night?.toFixed(2) || "0.00",
+      r.lst_day?.toFixed(1) || "0.0",
+      r.lst_night?.toFixed(1) || "0.0",
+      ((r.frac_built || 0) * 100).toFixed(0) + "%",
+      ((r.frac_tree || 0) * 100).toFixed(0) + "%",
+    ]);
 
-    if (filter === 'hot') {
-      result = result.filter((c) => c.suhii_night >= 3);
-    } else if (filter === 'cool') {
-      result = result.filter((c) => c.suhii_night < 1);
-    } else if (filter === 'green') {
-      result = result.filter((c) => c.frac_tree >= 0.2);
-    }
-
-    result.sort((a, b) => {
-      const va = a[sortKey];
-      const vb = b[sortKey];
-      return sortDir === 'asc' ? va - vb : vb - va;
-    });
-
-    return result.slice(0, 30);
-  }, [cells, sortKey, sortDir, filter]);
-
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
-    }
-  };
-
-  const handleExportCSV = () => {
-    const headers = ['cell_id', 'lat', 'lon', 'suhii_night', 'suhii_day', 'frac_built', 'frac_tree', 'frac_water'];
-    const rows = cells.map((c) => headers.map((h) => c[h as keyof CellSummary]).join(','));
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'nagpur_zones.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "chhaon_ward_rankings.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
-    /* NO ABSOLUTE POSITIONING - Managed by parent in page.tsx */
-    <div
-      className={`pointer-events-auto transition-all duration-300 ${
-        collapsed ? 'translate-y-[calc(100%-40px)]' : ''
-      }`}
-    >
-      <div className="mx-3 mb-3 bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              className="text-slate-400 hover:text-white transition-all"
-            >
-              {collapsed ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
-            </button>
-            <div className="text-xs font-semibold text-white uppercase tracking-wider">
-              Nagpur Zone Rankings
-            </div>
-            <div className="text-xs text-slate-500">
-              ({filteredAndSorted.length} of {cells.length} zones)
-            </div>
+    <div className="h-full w-full border-t border-slate-800 bg-slate-900/95 backdrop-blur-md flex flex-col text-xs text-slate-200">
+      
+      {/* Header Controls */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-1.5 font-bold text-slate-100">
+            <Flame className="w-4 h-4 text-orange-500" />
+            <span>Hotspot Triage & Ward Ranking Table</span>
+            <span className="text-[10px] text-slate-400 font-normal">({filtered.length} cells)</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Filter chips */}
-            <div className="flex gap-1">
-              <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>
-                All
-              </FilterChip>
-              <FilterChip active={filter === 'hot'} onClick={() => setFilter('hot')}>
-                🔥 Hot (&gt;3°C)
-              </FilterChip>
-              <FilterChip active={filter === 'cool'} onClick={() => setFilter('cool')}>
-                ❄️ Cool
-              </FilterChip>
-              <FilterChip active={filter === 'green'} onClick={() => setFilter('green')}>
-                🌳 High Canopy
-              </FilterChip>
-            </div>
-
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white transition-all"
-            >
-              <Download className="w-3 h-3" />
-              CSV
-            </button>
+          {/* Filter Chips */}
+          <div className="flex space-x-1">
+            {[
+              { id: "all", label: "All" },
+              { id: "hot", label: "🔥 Hotspots (>2.5°C)" },
+              { id: "cool", label: "❄️ Cool Zones" },
+              { id: "canopy", label: "🌳 High Canopy" },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id as any)}
+                className={`px-2 py-0.5 rounded text-[10px] transition ${
+                  filter === f.id
+                    ? "bg-orange-600 text-white font-semibold"
+                    : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {!collapsed && (
-          <div className="max-h-[240px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-slate-900 z-10">
-                <tr className="border-b border-slate-800">
-                  <th className="text-left px-4 py-2 text-slate-500 font-medium">Zone ID</th>
-                  <SortHeader
-                    label="Night SUHII"
-                    active={sortKey === 'suhii_night'}
-                    dir={sortDir}
-                    onClick={() => handleSort('suhii_night')}
-                  />
-                  <SortHeader
-                    label="Day SUHII"
-                    active={sortKey === 'suhii_day'}
-                    dir={sortDir}
-                    onClick={() => handleSort('suhii_day')}
-                  />
-                  <SortHeader
-                    label="Concrete"
-                    active={sortKey === 'frac_built'}
-                    dir={sortDir}
-                    onClick={() => handleSort('frac_built')}
-                  />
-                  <SortHeader
-                    label="Tree Canopy"
-                    active={sortKey === 'frac_tree'}
-                    dir={sortDir}
-                    onClick={() => handleSort('frac_tree')}
-                  />
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAndSorted.map((cell) => {
-                  const isSelected = cell.cell_id === selectedCellId;
-                  return (
-                    <tr
-                      key={cell.cell_id}
-                      onClick={() => onRowClick(cell.cell_id)}
-                      className={`
-                        cursor-pointer transition-all border-b border-slate-800/50 last:border-0
-                        ${
-                          isSelected
-                            ? 'bg-cyan-500/10 hover:bg-cyan-500/20'
-                            : 'hover:bg-slate-800/50'
-                        }
-                      `}
-                    >
-                      <td className="px-4 py-2 font-mono text-white">
-                        {cell.cell_id}
-                      </td>
-                      <td
-                        className={`px-4 py-2 font-mono font-semibold ${
-                          cell.suhii_night >= 3
-                            ? 'text-red-400'
-                            : cell.suhii_night >= 1
-                            ? 'text-orange-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {cell.suhii_night >= 0 ? '+' : ''}
-                        {cell.suhii_night.toFixed(1)}°C
-                      </td>
-                      <td className="px-4 py-2 font-mono text-slate-400">
-                        {cell.suhii_day >= 0 ? '+' : ''}
-                        {cell.suhii_day.toFixed(1)}°C
-                      </td>
-                      <td className="px-4 py-2 font-mono text-slate-300">
-                        {(cell.frac_built * 100).toFixed(0)}%
-                      </td>
-                      <td
-                        className={`px-4 py-2 font-mono ${
-                          cell.frac_tree >= 0.2
-                            ? 'text-emerald-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {(cell.frac_tree * 100).toFixed(0)}%
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={exportCSV}
+            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition text-[11px]"
+          >
+            <Download className="w-3 h-3" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="text-slate-400 hover:text-white"
+          >
+            {isCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
+
+      {/* Table Content */}
+      {!isCollapsed && (
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left border-collapse text-[11px]">
+            <thead className="sticky top-0 bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+              <tr>
+                <th className="py-1.5 px-3">Cell ID</th>
+                <th className="py-1.5 px-3">Night SUHII (°C)</th>
+                <th className="py-1.5 px-3">Day LST (°C)</th>
+                <th className="py-1.5 px-3">Night LST (°C)</th>
+                <th className="py-1.5 px-3">Built-up %</th>
+                <th className="py-1.5 px-3">Canopy %</th>
+                <th className="py-1.5 px-3">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => {
+                const isSelected = selectedCellId === row.cell_id;
+                const isHot = row.suhii_night >= 2.5;
+                return (
+                  <tr
+                    key={row.cell_id}
+                    onClick={() => onSelectCell(row.cell_id)}
+                    className={`cursor-pointer border-b border-slate-800/50 transition hover:bg-slate-800/80 ${
+                      isSelected ? "bg-orange-950/40 border-l-4 border-l-orange-500" : ""
+                    }`}
+                  >
+                    <td className="py-1.5 px-3 font-mono font-semibold text-slate-200">{row.cell_id}</td>
+                    <td className="py-1.5 px-3">
+                      <span className={`font-bold ${isHot ? "text-red-400" : "text-orange-400"}`}>
+                        +{row.suhii_night?.toFixed(2) || "0.00"}°C
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-3 text-slate-300">{row.lst_day?.toFixed(1) || "0.0"}°C</td>
+                    <td className="py-1.5 px-3 text-slate-300">{row.lst_night?.toFixed(1) || "0.0"}°C</td>
+                    <td className="py-1.5 px-3 text-slate-300">{((row.frac_built || 0) * 100).toFixed(0)}%</td>
+                    <td className="py-1.5 px-3 text-slate-300">{((row.frac_tree || 0) * 100).toFixed(0)}%</td>
+                    <td className="py-1.5 px-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectCell(row.cell_id);
+                        }}
+                        className="px-2 py-0.5 rounded bg-orange-600/80 hover:bg-orange-500 text-white text-[10px]"
+                      >
+                        Inspect
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
     </div>
   );
 }
 
-function SortHeader({
-  label,
-  active,
-  dir,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  dir: SortDir;
-  onClick: () => void;
-}) {
-  return (
-    <th
-      className="text-left px-4 py-2 text-slate-500 font-medium cursor-pointer hover:text-white transition-all"
-      onClick={onClick}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        {active ? (
-          dir === 'desc' ? (
-            <ChevronDown className="w-3 h-3 text-cyan-400" />
-          ) : (
-            <ChevronUp className="w-3 h-3 text-cyan-400" />
-          )
-        ) : (
-          <ChevronsUpDown className="w-3 h-3 opacity-30" />
-        )}
-      </div>
-    </th>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        px-2.5 py-1 rounded-md text-[11px] font-medium transition-all
-        ${
-          active
-            ? 'bg-cyan-500 text-white'
-            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-        }
-      `}
-    >
-      {children}
-    </button>
-  );
-}
+export default RankingTable;
