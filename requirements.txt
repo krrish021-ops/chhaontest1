@@ -1,0 +1,58 @@
+# Google Earth Engine
+earthengine-api==1.4.2
+
+# Geospatial
+rasterio==1.4.3
+geopandas==1.0.1
+shapely==2.0.6
+pyproj==3.7.0
+xarray==2024.10.0
+rioxarray==0.17.0
+
+# Data
+pandas==2.2.3
+numpy==1.26.4
+scipy==1.14.1
+pyarrow==18.0.0
+
+# Machine Learning
+scikit-learn==1.5.2
+lightgbm==4.5.0
+shap==0.46.0
+
+# Statistics
+statsmodels==0.14.4
+
+# API
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.2
+
+# Database
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+geoalchemy2==0.15.2
+
+# Cache
+redis==5.2.1
+
+# Reports
+matplotlib==3.9.2
+plotly==5.24.1
+jinja2==3.1.4
+
+# HTTP
+httpx==0.28.1
+requests==2.32.3
+
+# Utilities
+python-dotenv==1.0.1
+click==8.1.7
+tqdm==4.67.1
+loguru==0.7.3
+pyyaml==6.0.2
+
+# Testing
+pytest==8.3.4
+ruff==0.8.2
+

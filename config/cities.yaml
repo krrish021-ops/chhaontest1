@@ -1,0 +1,67 @@
+# Chhaon — City Registry for Maharashtra
+
+cities:
+  nagpur:
+    name: "Nagpur"
+    name_mr: "नागपूर"
+    state: "Maharashtra"
+    bbox: [78.90, 21.05, 79.25, 21.25]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 1
+    notes: "Hottest city in Maharashtra. First HAP city in India (2013)."
+
+  pune:
+    name: "Pune"
+    name_mr: "पुणे"
+    state: "Maharashtra"
+    bbox: [73.70, 18.40, 73.98, 18.65]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 2
+    notes: "Fastest-growing metro. IT boom converting farmland to concrete."
+
+  mumbai:
+    name: "Mumbai"
+    name_mr: "मुंबई"
+    state: "Maharashtra"
+    bbox: [72.77, 18.89, 72.99, 19.27]
+    buffer_km: 15
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 227
+    priority: 3
+    notes: "Coastal city. Complex UHI. Save for V2."
+
+  aurangabad:
+    name: "Chhatrapati Sambhajinagar"
+    name_mr: "छत्रपती संभाजीनगर"
+    state: "Maharashtra"
+    bbox: [75.25, 19.82, 75.42, 19.95]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 115
+    priority: 4
+    notes: "Marathwada region. Semi-arid, water-scarce."
+
+analysis:
+  modis_start_year: 2003
+  modis_end_year: 2025
+  primary_months: [3, 4, 5, 6]
+  secondary_months: [10, 11]
+  monsoon_months: [6, 7, 8, 9]
+  rural_reference:
+    min_buffer_km: 10
+    max_buffer_km: 30
+    max_elevation_diff_m: 100
+    max_slope_deg: 10
+    max_built_fraction: 0.05

@@ -1,0 +1,49 @@
+# Data files (too large for git)
+data/rasters/
+data/tables/
+data/boundaries/*.geojson
+data/ground_truth/
+data/exports/
+
+# Keep demo data (small, needed for demos)
+!data/demo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+service-account*.json
+
+# Model files (too large)
+models/*/artefacts/
+*.pkl
+*.joblib
+
+# But keep model configs
+!models/*/config.json
+!models/*/metrics.json
+!models/*/CARD.md
