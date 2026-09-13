@@ -1,0 +1,25 @@
+{
+  "model_id": "lightgbm_suhii_night_quantiles_v1",
+  "quantiles": {
+    "p10": 0.1,
+    "p50": 0.5,
+    "p90": 0.9
+  },
+  "features": [
+    "frac_built",
+    "frac_tree",
+    "frac_water",
+    "frac_crop",
+    "frac_grass"
+  ],
+  "calibration": {
+    "target_coverage": 0.8,
+    "actual_coverage": 0.624,
+    "mean_band_width_c": 1.362,
+    "verdict": "\ud83d\udea8 OVERCONFIDENT \u2014 bands too narrow"
+  },
+  "usage_example": {
+    "python": "import lightgbm as lgb\np10 = lgb.Booster(model_file='models/registry/lightgbm_suhii_night_p10.txt')\np50 = lgb.Booster(model_file='models/registry/lightgbm_suhii_night_p50.txt')\np90 = lgb.Booster(model_file='models/registry/lightgbm_suhii_night_p90.txt')\n"
+  },
+  "trained_at": "2026-09-13T16:07:24.155956Z"
+}

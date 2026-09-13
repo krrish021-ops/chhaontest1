@@ -47,3 +47,12 @@ models/*/artefacts/
 !models/*/config.json
 !models/*/metrics.json
 !models/*/CARD.md
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+node_modules/
+web/node_modules/
+.cache/
+cache/

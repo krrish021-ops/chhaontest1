@@ -1,0 +1,96 @@
+{
+  "model_id": "lightgbm_suhii_night_v2",
+  "model_family": "LightGBM Gradient Boosting",
+  "target": "suhii_night",
+  "target_unit": "degrees Celsius",
+  "target_description": "Nighttime Surface Urban Heat Island Intensity",
+  "features": [
+    "frac_built",
+    "frac_tree",
+    "frac_water",
+    "frac_crop",
+    "frac_grass"
+  ],
+  "monotone_constraints": {
+    "frac_built": 1,
+    "frac_tree": -1,
+    "frac_water": -1,
+    "frac_crop": 0,
+    "frac_grass": -1
+  },
+  "training_data": {
+    "source": "data/tables/nagpur_master_2024.parquet",
+    "n_rows": 229,
+    "cities": [
+      "nagpur"
+    ],
+    "time_period": "May 2024 (single month)"
+  },
+  "validation": {
+    "method": "spatial_blocked_cv",
+    "n_folds": 5,
+    "cv_mae_mean_c": 0.621,
+    "cv_mae_std_c": 0.095,
+    "in_sample_mae_c": 0.45,
+    "per_fold": [
+      {
+        "fold": "spatial_fold_1",
+        "n_train": 158,
+        "n_test": 71,
+        "mae_c": 0.579,
+        "r2": 0.5
+      },
+      {
+        "fold": "spatial_fold_2",
+        "n_train": 176,
+        "n_test": 53,
+        "mae_c": 0.663,
+        "r2": 0.675
+      },
+      {
+        "fold": "spatial_fold_3",
+        "n_train": 209,
+        "n_test": 20,
+        "mae_c": 0.541,
+        "r2": 0.514
+      },
+      {
+        "fold": "spatial_fold_4",
+        "n_train": 190,
+        "n_test": 39,
+        "mae_c": 0.536,
+        "r2": 0.44
+      },
+      {
+        "fold": "spatial_fold_5",
+        "n_train": 183,
+        "n_test": 46,
+        "mae_c": 0.787,
+        "r2": 0.389
+      }
+    ],
+    "note": "In-sample MAE is optimistic. Trust the CV MAE. Small dataset (229 rows, 1 month) means these numbers will change substantially when we scale to multi-year, multi-city."
+  },
+  "leakage_test": {
+    "real_mae_c": 0.45,
+    "shuffled_mae_c": 1.001,
+    "climatology_mae_c": 1.144,
+    "leakage_ratio": 0.875,
+    "verdict": "\u2705 NO LEAKAGE \u2014 shuffled MAE is near climatology"
+  },
+  "hyperparameters": {
+    "n_estimators": 300,
+    "learning_rate": 0.03,
+    "num_leaves": 15,
+    "random_state": 42,
+    "verbosity": -1
+  },
+  "known_limitations": [
+    "Trained on only 229 cells \u00d7 1 month \u00d7 1 city (see Gap #1 in docs)",
+    "No uncertainty bands yet (see Set 2 \u2014 coming next)",
+    "No weather normalization (see Set 3 \u2014 coming next)",
+    "Sprawl forecast uses flat growth rates, not cellular automaton"
+  ],
+  "trained_at": "2026-09-13T16:07:20.678430Z",
+  "trained_by": "models/gbm/train_blocked.py"
+}
