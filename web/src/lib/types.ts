@@ -1,5 +1,5 @@
 export type LayerSource = "observed" | "ml_fit" | "forecast_2031" | "forecast_2041";
-export type BasemapStyle = "dark" | "streets" | "satellite";
+export type BasemapStyle = "dark" | "streets";
 
 // Matches api/schemas/heat.py::CityInfo exactly.
 export interface CityInfo {

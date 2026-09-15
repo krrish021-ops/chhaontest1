@@ -17,7 +17,6 @@ interface HeatMapProps {
 const BASEMAP_URLS: Record<BasemapStyle, string> = {
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
   streets: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-  satellite: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
 };
 
 export function HeatMap({
@@ -139,7 +138,7 @@ export function HeatMap({
 
     const propKey = getPropKey(source);
 
-    // Clean up existing layers/sources before re-adding
+    // Clean up existing layers/sources
     [
       "chhaon-highlight-glow",
       "chhaon-highlight",
@@ -156,24 +155,24 @@ export function HeatMap({
       promoteId: "cell_id",
     });
 
-    // Smooth diverging color ramp — more stops = less visible banding
+    // Color ramp — -999 sentinel for null/missing data
     const colorExpression: any = [
       "interpolate",
       ["linear"],
-      ["coalesce", ["get", propKey], ["get", "suhii_night"], 0],
-      -4.0, "#1e3a8a",  // Deep cool
-      -2.0, "#2563eb",  // Cool
-      -0.5, "#38bdf8",  // Mild cool
-      0.0,  "#5eead4",  // Neutral
-      1.0,  "#fbbf24",  // Warm
-      2.0,  "#f59e0b",  // Hot
-      3.0,  "#ea580c",  // Very hot
-      4.0,  "#dc2626",  // Critical
-      5.5,  "#991b1b",  // Extreme
-      7.0,  "#450a0a",  // Max
+      ["coalesce", ["get", propKey], ["get", "suhii_night"], -999],
+      -999, "#1e293b", // No data — dark neutral (invisible on dark basemap)
+      -4.0, "#1e3a8a", // Deep cool
+      -2.0, "#2563eb", // Cool
+      -0.5, "#38bdf8", // Mild cool
+       0.0, "#5eead4", // Neutral
+       1.0, "#fbbf24", // Warm
+       2.0, "#f59e0b", // Hot
+       3.0, "#ea580c", // Very hot
+       4.0, "#dc2626", // Critical
+       5.5, "#991b1b", // Extreme
+       7.0, "#450a0a", // Max
     ];
 
-    // Base fill layer — smooth gradient, subtle hover brighten
     map.addLayer({
       id: "chhaon-heat-fill",
       type: "fill",
@@ -189,7 +188,6 @@ export function HeatMap({
       },
     });
 
-    // Soft, low-contrast borders — recede instead of dominate
     map.addLayer({
       id: "chhaon-heat-line",
       type: "line",
@@ -201,7 +199,6 @@ export function HeatMap({
       },
     });
 
-    // Outer glow ring behind the selection line (soft highlight halo)
     map.addLayer({
       id: "chhaon-highlight-glow",
       type: "line",
@@ -215,7 +212,6 @@ export function HeatMap({
       filter: ["==", ["to-string", ["get", "cell_id"]], selectedId?.toString() || ""],
     });
 
-    // Crisp selection border on top of the glow
     map.addLayer({
       id: "chhaon-highlight",
       type: "line",
@@ -228,7 +224,6 @@ export function HeatMap({
       filter: ["==", ["to-string", ["get", "cell_id"]], selectedId?.toString() || ""],
     });
 
-    // Dark, glassy popup matching the UI theme
     const popup = new maplibre.Popup({
       closeButton: false,
       closeOnClick: false,
@@ -244,10 +239,13 @@ export function HeatMap({
       map.getCanvas().style.cursor = "pointer";
 
       if (e.features && e.features[0]) {
-        const feat = e.features[0];
+        const feat  = e.features[0];
         const props = feat.properties || {};
         const cellId = props.cell_id || "Cell";
-        const val = props[propKey] ?? props.suhii_night ?? 0;
+
+        // Null-safe value — show "No data" instead of 0
+        const val    = props[propKey] ?? props.suhii_night ?? null;
+        const valNum = val !== null ? Number(val) : null;
 
         // Feature-state hover glow
         if (hoveredIdRef.current !== null && hoveredIdRef.current !== cellId) {
@@ -259,16 +257,27 @@ export function HeatMap({
         map.setFeatureState({ source: "chhaon-grid", id: cellId }, { hover: true });
         hoveredIdRef.current = cellId;
 
-        const valNum = Number(val);
-        const valColor = valNum >= 3 ? "#f87171" : valNum >= 1 ? "#fbbf24" : "#5eead4";
+        const valColor =
+          valNum === null
+            ? "#94a3b8"
+            : valNum >= 3
+            ? "#f87171"
+            : valNum >= 1
+            ? "#fbbf24"
+            : "#5eead4";
+
+        const valDisplay =
+          valNum === null
+            ? '<span style="color:#94a3b8">No data</span>'
+            : `${valNum >= 0 ? "+" : ""}${valNum.toFixed(2)}°C`;
 
         popup
           .setLngLat(e.lngLat)
           .setHTML(
-            `<div style="font-family: 'Inter', sans-serif; font-size: 12px; padding: 8px 10px; background: #0f172a; color: #e2e8f0; border-radius: 8px; border: 1px solid #334155; box-shadow: 0 8px 24px rgba(0,0,0,0.5);">
-              <div style="font-weight: 600; margin-bottom: 4px; color: #f8fafc; letter-spacing: 0.02em;">Cell ${cellId}</div>
-              <div style="color: #94a3b8; font-size: 11px;">Night Anomaly</div>
-              <div style="font-weight: 700; font-size: 15px; color: ${valColor};">${valNum >= 0 ? "+" : ""}${valNum.toFixed(2)}°C</div>
+            `<div style="font-family:'Inter',sans-serif;font-size:12px;padding:8px 10px;background:#0f172a;color:#e2e8f0;border-radius:8px;border:1px solid #334155;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+              <div style="font-weight:600;margin-bottom:4px;color:#f8fafc;letter-spacing:0.02em;">Cell ${cellId}</div>
+              <div style="color:#94a3b8;font-size:11px;">Night SUHII Anomaly</div>
+              <div style="font-weight:700;font-size:15px;color:${valColor};">${valDisplay}</div>
             </div>`
           )
           .addTo(map);
@@ -290,14 +299,12 @@ export function HeatMap({
     map.on("click", "chhaon-heat-fill", (e) => {
       if (e.features && e.features[0]) {
         const cellId = e.features[0].properties?.cell_id;
-        if (cellId) {
-          onSelectCell(cellId.toString());
-        }
+        if (cellId) onSelectCell(cellId.toString());
       }
     });
   };
 
-  // Helper: Auto-zoom to city boundaries
+  // Auto-zoom to city boundaries
   const fitBoundsToGeoJSON = (map: MapLibreMap, data: any) => {
     if (!data || !data.features || data.features.length === 0) return;
 
@@ -325,10 +332,7 @@ export function HeatMap({
 
     if (minX < maxX && minY < maxY) {
       map.fitBounds(
-        [
-          [minX, minY],
-          [maxX, maxY],
-        ],
+        [[minX, minY], [maxX, maxY]],
         { padding: 60, maxZoom: 14, duration: 1200 }
       );
     }

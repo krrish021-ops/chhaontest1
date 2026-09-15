@@ -13,7 +13,11 @@ BOUNDS_DIR = Path("data/boundaries")
 DEFAULT_ZOOM = 11
 
 
-def safe_float(val, default=0.0):
+def safe_float(val, default=None):
+    """
+    Convert val to float. Returns default (None) instead of inventing
+    a plausible-looking number. Callers must handle None explicitly.
+    """
     if val is None:
         return default
     try:
@@ -83,7 +87,10 @@ def list_cities_service():
 
 def get_city_aoi_service(city_id="nagpur"):
     city = city_id.lower()
-    for p in [BOUNDS_DIR / f"{city}_boundary.geojson", BOUNDS_DIR / f"{city}_grid.geojson"]:
+    for p in [
+        BOUNDS_DIR / f"{city}_boundary.geojson",
+        BOUNDS_DIR / f"{city}_grid.geojson",
+    ]:
         if p.exists():
             return json.loads(p.read_text())
     raise FileNotFoundError(f"Boundary not found for {city}")
@@ -101,31 +108,76 @@ def get_heatmap_geojson_service(city_id="nagpur"):
         if p.exists():
             file_path = p
             break
+
     if file_path is None:
         raise FileNotFoundError(f"No heatmap/grid GeoJSON for {city}")
 
     geojson = json.loads(file_path.read_text())
     feats = geojson.get("features", [])
+
     if len(feats) < 2:
-        # hard fail signal: still a giant polygon
         raise ValueError(
-            f"{file_path} has only {len(feats)} feature(s). Run: python -m scripts.rebuild_city_grids"
+            f"{file_path} has only {len(feats)} feature(s). "
+            f"Run: python -m scripts.build_heatmaps {city}"
         )
 
     for feat in feats:
         props = feat.get("properties", {}) or {}
-        suhii = safe_float(props.get("suhii_night_normalized", props.get("suhii_night")), 1.92)
-        props["suhii_night"] = suhii
-        props["suhii_night_normalized"] = suhii
-        props["suhii_night_ml"] = safe_float(props.get("suhii_night_ml"), suhii)
-        props["suhii_night_2031"] = safe_float(props.get("suhii_night_2031"), round(suhii + 0.42, 2))
-        props["suhii_night_2041"] = safe_float(props.get("suhii_night_2041"), round(suhii + 1.18, 2))
-        props["lst_day"] = safe_float(props.get("lst_day"), 38.2)
-        props["lst_night"] = safe_float(props.get("lst_night"), 28.4)
-        props["frac_built"] = safe_float(props.get("frac_built"), 0.55)
-        props["frac_tree"] = safe_float(props.get("frac_tree"), 0.12)
-        if "cell_id" not in props:
+
+        # ── SUHII night (the headline field) ──────────────────────────────
+        # Prefer normalized; fall back to raw; never invent a number.
+        suhii_raw = safe_float(props.get("suhii_night"))
+        suhii_norm = safe_float(
+            props.get("suhii_night_normalized"),
+            default=suhii_raw,   # fall back to raw, not to 1.92
+        )
+
+        props["suhii_night"]            = suhii_raw
+        props["suhii_night_normalized"] = suhii_norm
+
+        # ML fit: use stored value if present, otherwise same as normalized
+        # (both are None when parquet is missing — do NOT substitute 1.92)
+        props["suhii_night_ml"] = safe_float(
+            props.get("suhii_night_ml"),
+            default=suhii_norm,
+        )
+
+        # ── Forecast layers ───────────────────────────────────────────────
+        # Only derive if the base value actually exists.
+        # Add a clear label so the frontend can show the disclaimer.
+        if suhii_norm is not None:
+            props["suhii_night_2031"] = safe_float(
+                props.get("suhii_night_2031"),
+                default=round(suhii_norm + 0.42, 2),
+            )
+            props["suhii_night_2041"] = safe_float(
+                props.get("suhii_night_2041"),
+                default=round(suhii_norm + 1.18, 2),
+            )
+        else:
+            props["suhii_night_2031"] = None
+            props["suhii_night_2041"] = None
+
+        # Flag so the frontend can show the "constant offset" disclaimer
+        props["forecast_method"] = "constant_offset_bau"
+        props["forecast_disclaimer"] = (
+            "2031/2041 values are illustrative BAU estimates "
+            "(observed + 0.42/+1.18 °C constant). "
+            "Not derived from a land-use change model."
+        )
+
+        # ── Other fields — pass through, never invent ─────────────────────
+        props["lst_day"]    = safe_float(props.get("lst_day"))
+        props["lst_night"]  = safe_float(props.get("lst_night"))
+        props["frac_built"] = safe_float(props.get("frac_built"))
+        props["frac_tree"]  = safe_float(props.get("frac_tree"))
+        props["frac_water"] = safe_float(props.get("frac_water"))
+        props["frac_crop"]  = safe_float(props.get("frac_crop"))
+        props["frac_grass"] = safe_float(props.get("frac_grass"))
+
+        if "cell_id" not in props or not props["cell_id"]:
             props["cell_id"] = "UNKNOWN"
+
         feat["properties"] = props
 
     geojson["features"] = feats

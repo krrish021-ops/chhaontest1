@@ -9,6 +9,8 @@ interface ReportModalProps {
   cityId: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
 export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, cityId }) => {
   const [loading, setLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, cityI
     setPdfUrl(null);
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/report/generate", {
+      const res = await fetch(`${API_BASE}/api/v1/report/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -38,7 +40,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, cityI
       }
 
       const data = await res.json();
-      setPdfUrl(`http://localhost:8000${data.report_url}`);
+      setPdfUrl(`${API_BASE}${data.report_url}`);
       setFileSize(data.file_size_kb);
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
@@ -50,7 +52,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, cityI
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div className="relative w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl text-slate-100">
-        
+
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -82,6 +84,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, cityI
             <li>Simulated counterfactual mitigation scenarios & costs</li>
             <li>Statutory signature blocks for standing committees</li>
           </ul>
+        </div>
+
+        {/* Calibration Warning */}
+        <div className="flex items-start space-x-2 text-xs text-amber-400 bg-amber-950/40 p-3 rounded-lg border border-amber-800/40 mb-4">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>
+            Uncertainty bands are currently overconfident (62.4% coverage vs 80% target).
+            Scenario ΔT ranges should be interpreted as indicative, not precise.
+          </span>
         </div>
 
         {/* Error State */}
