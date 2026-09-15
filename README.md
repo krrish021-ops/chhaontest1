@@ -1,1141 +1,790 @@
-📖 Chhaon (छांव) — Complete Master Handoff Document v3.0
-Post Phase 7 Frontend Polish — Full Context for AI Model Onboarding
-📖 Table of Contents
-Project Identity
-Mission & Problem Statement
-Governing Principles (Non-Negotiables)
-Complete Technical Architecture
-PHASE 1: Foundation — ✅ COMPLETE
-PHASE 2: Satellite Data Pipeline — ✅ COMPLETE
-PHASE 3: ML Model & Scenario Engine — ✅ COMPLETE
-PHASE 4: Backend API — ✅ COMPLETE
-PHASE 5: Initial Frontend — ✅ COMPLETE
-PHASE 6: Model Credibility Fixes — ✅ COMPLETE
-PHASE 7: Advanced Interactive Frontend — ✅ COMPLETE
-Comprehensive PRD vs Delivered Comparison
-Comprehensive TRD vs Delivered Comparison
-Remaining Gaps (Complete Analysis)
-PHASE 8: Reports & Exports — ⏳ NEXT
-PHASE 9: Deployment — ⏳ FUTURE
-Complete File Inventory
-Environment & Credentials
-How to Run Everything
-Critical Context for AI Handoff
-1. Project Identity
-Attribute	Value
-Product Name	Chhaon (छांव — Hindi for "shade")
-Product Type	Web-based decision-support tool for urban heat
-Domain	Urban Heat Island (UHI) forecasting & mitigation
-Target Users	Indian municipal town planners, city commissioners
-Pilot City	Nagpur, Maharashtra
-Development Machine	Ubuntu Linux
-User Handle	krrish-soni
-Home Directory	/home/krrish-soni/chhaon
-Current Status	~92% Complete (Phases 1-7 done, Phase 8-9 pending)
-Editor Preference	nano (Ubuntu)
-Version	v3.0 (Post Phase 7)
-2. Mission & Problem Statement
-The Mission
-Turn 25 years of free satellite land-surface-temperature + land-cover + urban-form data into three actionable outputs:
+# Chhaon (छांव) — Urban Heat Intelligence for Indian Cities
 
-Where the city is hot today (ward-level heat maps, day + night)
-Where it will be hotter in 2031/2041 (ML forecasts with uncertainty)
-What each intervention buys back in °C and ₹ (interactive scenario painter)
-The Problem Being Solved
-Indian cities are heating up faster than climate change alone predicts because of how they are being built. Every rezoning decision (park → apartments, lake → concrete) increases urban heat by 2-4°C, but planners currently have zero thermal feedback on their decisions. Existing analyses are retrospective research papers with no operational reach.
+> **छांव** means *shade* in Hindi — this tool helps Indian cities find where
+> shade is needed most, and what it would cost to create it.
 
-The Differentiator
-An interactive "paint the future" scenario simulator where a planner:
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://python.org)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org)
+[![LightGBM](https://img.shields.io/badge/ML-LightGBM-green.svg)](https://lightgbm.readthedocs.io)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-teal.svg)](https://fastapi.tiangolo.com)
+[![MapLibre GL](https://img.shields.io/badge/Map-MapLibre_GL-orange.svg)](https://maplibre.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Selects a hotspot cell on the map
-Chooses to "Plant Trees" (or Cool Roofs / Restore Water)
-Slides coverage % (5%-50%)
-Gets live temperature drop with uncertainty range (e.g. "-1.15°C, range -0.6 to -1.7°C")
-Gets live ₹ cost (e.g. "₹16 Lakh")
-Sees extrapolation warnings if the scenario is unrealistic
-Watches the AI "think" in real-time (transparency trace)
-3. Governing Principles (Non-Negotiables)
-Rule	Reason
-Server-side compute first	All heavy work in Google Earth Engine; download aggregates only
-Anomaly (SUHII), not absolute LST	Raw LST is dominated by seasonality — no planning value
-Blocked CV always	Random k-fold on spatial data leaks memorization
-COG rasters, Parquet tables, PostGIS geography	No format invention
-Version every artefact	(data_version, code_version, config_hash)
-Simplest model that clears the bar ships	LightGBM before ConvLSTM
-Never call GEE live during a demo	Pre-materialize and cache
-Physics constraints non-negotiable	Monotone constraints prevent "trees make it hotter"
-NEVER use mock data	User explicitly rejected this — always real satellite data
-NEVER use random k-fold CV	Always blocked splits (temporal/spatial/city)
-Uncertainty bands mandatory	No forecast ever shown as a bare number
-Extrapolation warnings mandatory	Model must refuse to over-predict outside its knowledge
-Non-Goals (Explicitly Out of Scope)
-ID	Non-goal	Why
-N1	Public weather forecast	IMD/commercial apps own this
-N2	Human heat-stress/mortality modeling	Requires micro-meteorology
-N3	Real-time citizen SMS/siren alerts	Different problem, needs SLAs
-N4	Real estate valuation	Ethically fraught (redlining risk)
-N5	Sub-10m microclimate CFD	Compute prohibitive
-N6	Personal/household data	Aggregate-only, always
-4. Complete Technical Architecture
-System Diagram
-text
+---
 
-┌─────────── DATA SOURCES (all free, in orbit) ───────────┐
-│ NASA MODIS (LST) · ESA WorldCover (LC) · Landsat        │
-│ Sentinel-2 · JRC GHSL · ERA5 · SRTM · OSM boundaries    │
-└──────────────────────┬───────────────────────────────────┘
-                       │ (Google Earth Engine batch reduceRegions)
-                       ▼
-┌─────────── ① INGESTION LAYER (Phase 2) ─────────────────┐
-│  pipeline/ingest/*.py — Python + GEE                    │
-│  Outputs: Parquet tables + GeoJSON                      │
-└──────────────────────┬───────────────────────────────────┘
-                       ▼
-┌─────────── ② PROCESSING LAYER (Phase 2 + 6) ────────────┐
-│  pipeline/preprocess/ + pipeline/targets/               │
-│  Rural reference · SUHII computation · feature matrix   │
-│  Sprawl trajectory projection for 2031/2041             │
-│  Weather normalization proxy (Phase 6)                  │
-└──────────────────────┬───────────────────────────────────┘
-                       ▼
-┌─────────── ③ MODELLING LAYER (Phase 3 + 6) ─────────────┐
-│  models/baselines/  — M1 OLS (transparent formula)      │
-│  models/gbm/ ★     — M2 LightGBM (champion + physics)   │
-│  models/gbm/       — Quantile P10/P50/P90 (Phase 6)     │
-│  models/explain/    — SHAP explainability               │
-│  models/transfer_function/ — M5 scenario engine         │
-│  models/cv/         — Blocked CV + Domain Guard (P6)    │
-│  models/registry/   — trained model binaries + cards    │
-└──────────────────────┬───────────────────────────────────┘
-                       ▼
-┌─────────── ④ SERVING LAYER (Phase 4) ───────────────────┐
-│  api/main.py — FastAPI with 4 routers                   │
-│  PostgreSQL + PostGIS · CORS enabled for Next.js        │
-│  Auto-generated OpenAPI docs at /docs                   │
-│  Uncertainty bands + extrapolation warnings in schema   │
-└──────────────────────┬───────────────────────────────────┘
-                       ▼
-┌─────────── ⑤ CLIENT LAYER (Phase 5 + 7) ────────────────┐
-│  web/ — Next.js 14 + TypeScript + MapLibre GL JS        │
-│  4 Layer Sources: Observed | ML Fit | 2031 | 2041       │
-│  3 Basemap Styles: Dark | Streets | Satellite Aerial    │
-│  Cell Detail Panel + SHAP + Ranking Table + Painter     │
-│  Time Machine + Search + Model Card + AI Trace          │
-│  Uncertainty visualization (P10/P50/P90 bands)          │
-└──────────────────────────────────────────────────────────┘
-Technology Stack Summary
-Layer	Technology	Version	Purpose
-OS	Ubuntu Linux	Latest	Development
-Backend Language	Python	3.11	ML + API
-Frontend Language	Node.js	20 LTS	Web app
-Database	PostgreSQL + PostGIS	16 / 3.4	Spatial queries
-Cache	Redis	7	Scenario cache (planned)
-Geospatial	GDAL	3.4+	Raster/vector I/O
-Satellite Platform	Google Earth Engine	1.4.2	Data source
-ML Framework	LightGBM	4.5.0	Champion model (M2)
-Explainability	SHAP	0.46.0	"Why is this hot?"
-Statistics	statsmodels	0.14.4	OLS baseline (M1)
-API Framework	FastAPI	0.115.5	Backend REST API
-Frontend Framework	Next.js	14.2.35	React app
-Map Library	MapLibre GL JS	4.7.1	Interactive maps
-Styling	Tailwind CSS	3.4.14	Dark UI
-Icons	lucide-react	0.453.0	UI icons
-5. PHASE 1: Foundation — ✅ COMPLETE
-What Was Built
-System Setup
+## Table of Contents
 
-Ubuntu updated + essential tools
-Python 3.11 via deadsnakes PPA
-Node.js 20 LTS via NodeSource
-GDAL 3.4+ + GEOS + PROJ + spatial libraries
-PostgreSQL 16 + PostGIS 3.4 (chhaon_db, user chhaon, password chhaon_dev_2024)
-Redis on port 6379
-Project Structure Created
+1. [What is Chhaon?](#1-what-is-chhaon)
+2. [Who is it for?](#2-who-is-it-for)
+3. [What problem does it solve?](#3-what-problem-does-it-solve)
+4. [How it works — big picture](#4-how-it-works--big-picture)
+5. [Project structure](#5-project-structure)
+6. [Technology stack](#6-technology-stack)
+7. [Data sources](#7-data-sources)
+8. [Data pipeline — step by step](#8-data-pipeline--step-by-step)
+9. [Machine learning models](#9-machine-learning-models)
+10. [Backend API](#10-backend-api)
+11. [Frontend](#11-frontend)
+12. [Map engine](#12-map-engine)
+13. [Scenario simulator](#13-scenario-simulator)
+14. [PDF report generator](#14-pdf-report-generator)
+15. [Data flow diagram](#15-data-flow-diagram)
+16. [How every component connects](#16-how-every-component-connects)
+17. [Getting started (fresh install)](#17-getting-started-fresh-install)
+18. [Environment variables](#18-environment-variables)
+19. [Running the project](#19-running-the-project)
+20. [API reference](#20-api-reference)
+21. [Known limitations & honest disclosures](#21-known-limitations--honest-disclosures)
+22. [Roadmap](#22-roadmap)
+23. [Contributing](#23-contributing)
+24. [License & attribution](#24-license--attribution)
 
-text
+---
 
-/home/krrish-soni/chhaon/
-├── config/           # City definitions
-├── gee/              # GEE-isolated scripts (empty; direct API used)
-├── pipeline/         # Data processing
-├── models/           # ML models
-├── api/              # FastAPI backend
-├── web/              # Next.js frontend
-├── reports/          # PDF templates (Phase 8)
-├── scripts/          # Helpers
-├── tests/            # Test suite (Phase 8)
-├── data/             # Git-ignored
-└── docs/             # PRD, TRD, methodology
-Configuration Files
+## 1. What is Chhaon?
 
-config/cities.yaml — 4 Maharashtra cities (Nagpur active, Pune/Mumbai/Aurangabad configured)
-config/loader.py — Central config accessor with get_city(), get_db_url(), get_redis_url()
-.env — DB, Redis, GEE credentials
-Python Environment
+Chhaon is a **web-based decision-support tool** that turns satellite data
+into actionable urban heat intelligence for Indian municipal planners.
 
-Virtual environment: .venv/
-Key packages: earthengine-api, rasterio, geopandas, lightgbm, shap, fastapi, psycopg2-binary, statsmodels, osmnx, scipy
-Google Earth Engine
+It answers three questions:
 
-Cloud Project: chhaon-508513
-Earth Engine API enabled
-Registered for non-commercial use
-Credentials in ~/.config/earthengine/
-6. PHASE 2: Satellite Data Pipeline — ✅ COMPLETE
-What Was Built
-2.1 City Boundary & 1km Grid
+| Question | What Chhaon shows |
+|----------|------------------|
+| **Where is it hot right now?** | A live choropleth map of every 1 km² cell in the city, coloured by how much hotter it is than the surrounding rural baseline |
+| **Where will it be hotter in 2031/2041?** | Business-as-usual projections showing which zones face the worst heat if sprawl continues unchecked |
+| **What can we do about it — and what does it cost?** | A scenario simulator that lets planners test planting trees, restoring water bodies, or adding concrete — and shows the predicted temperature change and rupee cost |
 
-pipeline/ingest/boundaries.py — Downloads Nagpur outline from OSM via osmnx
-pipeline/ingest/load_to_db.py — Loads grid into PostGIS as nagpur_grid table
-Result: 229 grid cells covering Nagpur (~1km × 1km each)
-2.2 MODIS LST Extraction (NASA Terra Satellite)
+Everything is derived from **free, open satellite data** — no expensive
+sensors, no proprietary feeds.
 
-pipeline/ingest/modis_lst.py
-Uses server-side batch processing (reduceRegions()) — all 229 cells in ~3 seconds
-Extracts day (~10:30 AM IST) and night (~10:30 PM IST) surface temperatures
-Converts Kelvin×50 → Celsius: °C = (val × 0.02) − 273.15
-Critical: .median() MUST be called before .multiply() on ImageCollections
-Data: 2020-2024, March-June (peak heat, no monsoon clouds)
-Actual Nagpur Results (May 2024):
+---
 
-Daytime LST: 37.7°C avg (34.8 to 45.0)
-Nighttime LST: 28.3°C avg (25.4 to 30.8)
-2.3 ESA WorldCover Land Cover
+## 2. Who is it for?
 
-pipeline/ingest/landcover.py
-Uses shapely.geometry.mapping() for polygon-to-GEE conversion
-ESA WorldCover 2021, 10m resolution
-Extracts fractions for: built (50), tree (10), water (80), crop (40), grass (30), bare (60)
-Actual Nagpur Land Cover:
+| User | Role | What they use |
+|------|------|---------------|
+| **Municipal Town Planners** | Primary | Heat maps, hotspot rankings, scenario simulator, PDF audit reports |
+| **Commissioners / Decision-makers** | Secondary | PDF reports, summary KPIs, cost-effectiveness rankings |
+| **Researchers / Public** | Tertiary | GeoJSON data export, open API |
 
-Built: 51.8% | Tree: 14.5% | Grass: 18.8% | Crop: 11.1% | Water: 1.3% | Bare: 0.8%
-2.4 Master Dataset Merger
+**Pilot cities:** Nagpur (229 grid cells) and Pune (414 grid cells).
+Mumbai and Chhatrapati Sambhajinagar are configured but not yet ingested.
 
-pipeline/preprocess/merge_data.py
-Output: data/tables/nagpur_master_2024.parquet (229 rows × 12 columns)
-2.5 Rural Reference (The Credibility Backbone)
+---
 
-pipeline/targets/rural_reference.py
-20km buffer around Nagpur, excludes 2km inner buffer
-Filters to cropland + grassland only
-Actual May 2024: Day 40.4°C, Night 26.4°C
-2.6 SUHII Calculator (Headline Metric)
+## 3. What problem does it solve?
 
-pipeline/targets/compute_suhii.py
-Formula: SUHII = Cell_LST − Rural_Reference_LST
-Actual Nagpur:
+Indian cities are getting hotter faster than almost anywhere else on earth.
+Urban Heat Island (UHI) effect — where cities are measurably hotter than
+surrounding rural areas — costs lives, reduces productivity, and drives up
+energy demand.
 
-Mean SUHII Day: -2.7°C (Vidarbha oasis effect)
-Mean SUHII Night: +1.9°C (concrete heat retention)
-Max SUHII Night: +4.3°C (hottest zone)
-2.7 Web-Ready Heatmap GeoJSON
+**The problem for planners:**
+- No affordable, city-scale thermal data
+- No way to compare "plant trees vs restore lake vs cool roofs" quantitatively
+- No tool that speaks the language of municipal budgets (₹ lakh/crore)
 
-scripts/generate_heatmap.py
-Output: data/demo/nagpur_heatmap.geojson (121.5 KB, 229 cells)
-2.8 Sprawl Forecast (2031/2041 Projections)
+**What Chhaon provides:**
+- Free satellite LST (Land Surface Temperature) data processed into
+  per-cell SUHII (Surface Urban Heat Island Intensity) anomalies
+- A physics-constrained ML model that predicts how land cover changes
+  affect local temperature
+- Cost estimates in Indian Rupees with lakh/crore formatting
+- A PDF report formatted for statutory planning committees
 
-pipeline/preprocess/sprawl_forecast.py
-Applies growth trajectories to feature vectors:
-2031: 15% of crop → built-up (7 years of BAU sprawl)
-2041: 35% conversion + 15% tree canopy loss (17 years)
-Runs LightGBM inference on projected features
-Output: data/demo/nagpur_forecast_heatmap.geojson
-Actual Forecast Results:
+---
 
-2024 (Observed): +1.92°C mean night SUHII
-2024 (ML Inference): +1.91°C (MAE: 0.18°C in-sample)
-2031 (Forecast): +2.34°C (▲ +0.42°C warmer)
-2041 (Forecast): +3.10°C (▲ +1.18°C warmer)
-⚠️ Critical Scientific Interpretation
-Negative daytime SUHII IS REAL for Nagpur in May (semi-arid Vidarbha oasis effect)
-Nighttime SUHII is the health metric — focus reporting on suhii_night
-LST ≠ Air Temperature — surface is 5-15°C hotter than air temp during day (FR-60)
-7. PHASE 3: ML Model & Scenario Engine — ✅ COMPLETE
-What Was Built
-3.1 OLS Baseline Model (M1)
+## 4. How it works — big picture
+SATELLITE DATA (Google Earth Engine)
+│
+▼
+PYTHON PIPELINE
+(boundary → LST → land cover → weather → SUHII → ML models)
+│
+▼
+PARQUET FILES + GEOJSON FILES
+(stored locally, git-ignored except demo files)
+│
+▼
+FASTAPI BACKEND (Python)
+(serves GeoJSON, rankings, SHAP explanations, scenarios, PDFs)
+│
+▼ HTTP REST API
+NEXT.JS FRONTEND (React + TypeScript)
+(MapLibre GL map + panels + scenario painter + report modal)
+│
+▼
+MUNICIPAL PLANNER'S BROWSER
 
-models/baselines/ols_regression.py
-Uses statsmodels.api.OLS
-Formula: SUHII_night = β₁·frac_built + β₂·frac_tree + β₃·frac_water + intercept
-Purpose: Transparent linear coefficients quotable in reports (TRD ADR-09)
-3.2 LightGBM Champion Model (M2) ⭐
+The key insight: **all heavy computation happens offline** (the pipeline).
+The web app serves pre-computed files — making it fast and cheap to host.
 
-models/gbm/train.py (deprecated in Phase 6)
-models/gbm/train_blocked.py (Phase 6 replacement)
-Configuration:
+---
 
-Python
+## 5. Project structure
+chhaon/
+│
+├── pipeline/ # Data ingestion & processing
+│ ├── ingest/
+│ │ ├── boundaries.py # OSM city boundary + 1km grid (Nagpur)
+│ │ ├── ingest_pune.py # All-in-one Pune pipeline
+│ │ ├── modis_lst.py # NASA MODIS Land Surface Temperature
+│ │ ├── landcover.py # ESA WorldCover land classification
+│ │ ├── sentinel2_indices.py # Sentinel-2 spectral indices (NDVI etc.)
+│ │ ├── ghsl_viirs.py # Building height + night lights
+│ │ └── era5_weather.py # ERA5-Land weather data
+│ ├── targets/
+│ │ ├── rural_reference.py # Rural baseline temperature ring
+│ │ └── compute_suhii.py # SUHII = city - rural baseline
+│ └── preprocess/
+│ ├── weather_normalize.py # Remove weather signal from SUHII
+│ ├── build_feature_matrix.py # Merge all data → training table
+│ └── merge_data.py # Legacy May-2024 master table
+│
+├── models/ # ML models
+│ ├── gbm/
+│ │ ├── train_blocked.py # Train v1 model (5 features, spatial CV)
+│ │ └── train_quantile.py # Train P10/P50/P90 uncertainty models
+│ ├── baselines/
+│ │ └── ols_regression.py # Interpretable OLS baseline
+│ ├── cv/
+│ │ ├── blocked_split.py # Spatial block cross-validation
+│ │ ├── city_block_cv.py # Cross-city held-out test
+│ │ └── domain_guard.py # Extrapolation detection
+│ ├── explain/
+│ │ └── shap_explainer.py # SHAP feature attribution
+│ ├── transfer_function/
+│ │ ├── scenario_engine.py # Single-cell intervention simulator
+│ │ └── comparison_engine.py # Multi-scenario comparator
+│ └── registry/ # COMMITTED trained model files
+│ ├── lightgbm_suhii_night.txt # v1 point model
+│ ├── lightgbm_suhii_night_v2.txt # v2 point model (19 features)
+│ ├── lightgbm_suhii_day_v2.txt # v2 day model
+│ ├── lightgbm_suhii_night_p10.txt # Quantile P10
+│ ├── lightgbm_suhii_night_p50.txt # Quantile P50
+│ ├── lightgbm_suhii_night_p90.txt # Quantile P90
+│ ├── CARD.json # v1 model card + metrics
+│ ├── CARD_v2.json # v2 model card + metrics
+│ ├── CARD_quantiles.json # Quantile model card
+│ └── CARD_city_block.json # Cross-city CV results
+│
+├── api/ # FastAPI backend
+│ ├── main.py # App entry point, CORS, health check
+│ ├── routers/
+│ │ ├── cities.py # GET /cities, GET /aoi/{city}
+│ │ ├── layers.py # GET /layers/{city}
+│ │ ├── cells.py # GET /cells/{city}, GET /cell/{id}/explain
+│ │ ├── scenarios.py # POST /scenario/evaluate, /compare
+│ │ └── reports.py # POST /report/generate
+│ ├── services/
+│ │ ├── spatial_service.py # GeoJSON serving + city registry
+│ │ └── heat_service.py # Rankings + SHAP explanations
+│ └── schemas/
+│ ├── heat.py # Pydantic models for city/cell data
+│ └── scenario.py # Pydantic models for scenario I/O
+│
+├── reports/ # PDF generation
+│ ├── generator.py # WeasyPrint PDF compiler
+│ └── templates/
+│ └── thermal_audit.html # Jinja2 HTML template → PDF
+│
+├── web/ # Next.js 14 frontend
+│ ├── src/
+│ │ ├── app/
+│ │ │ ├── page.tsx # Main dashboard page
+│ │ │ └── layout.tsx # Root layout + fonts
+│ │ ├── components/
+│ │ │ ├── map/
+│ │ │ │ ├── HeatMap.tsx # MapLibre GL choropleth
+│ │ │ │ ├── MapControls.tsx # Layer switcher + opacity
+│ │ │ │ └── TimeMachine.tsx # 4-frame layer animator
+│ │ │ ├── panels/
+│ │ │ │ ├── CityStatsBar.tsx # Header KPIs (live from API)
+│ │ │ │ ├── CellDetailPanel.tsx # Selected cell details + SHAP
+│ │ │ │ ├── RankingTable.tsx # Sortable hotspot table
+│ │ │ │ ├── SearchAndInfo.tsx # Cell search + model card modal
+│ │ │ │ └── ReportModal.tsx # PDF generation trigger
+│ │ │ └── scenario/
+│ │ │ ├── ScenarioPainter.tsx # Single-cell intervention UI
+│ │ │ └── ScenarioComparison.tsx # A/B/C comparison UI
+│ │ └── lib/
+│ │ ├── api.ts # All fetch calls to the backend
+│ │ └── types.ts # TypeScript interfaces
+│ ├── package.json
+│ └── next.config.js
+│
+├── config/
+│ ├── cities.yaml # City registry (name, bbox, priority)
+│ └── loader.py # YAML config reader
+│
+├── scripts/
+│ ├── build_heatmaps.py # SAFE: build demo GeoJSONs from parquet
+│ └── rebuild_city_grids.py # ⛔ QUARANTINED — do not run
+│
+├── data/
+│ ├── demo/ # COMMITTED web-ready GeoJSONs
+│ │ ├── nagpur_heatmap_normalized.geojson
+│ │ ├── nagpur_forecast_heatmap.geojson
+│ │ ├── pune_heatmap_normalized.geojson
+│ │ └── ...
+│ ├── reports/ # Generated PDF reports
+│ ├── tables/ # GIT-IGNORED Parquet tables (regenerate)
+│ └── boundaries/ # GIT-IGNORED grid + boundary GeoJSONs
+│
+├── docs/
+│ ├── VALIDATION.md # Model validation evidence
+│ └── COUNTERFACTUAL_VALIDATION.md
+│
+├── requirements.txt # Python dependencies
+├── .env # Environment variables (not committed)
+└── README.md # This file
 
-lgb.LGBMRegressor(
-    n_estimators=300,
-    learning_rate=0.03,
-    num_leaves=15,
-    monotone_constraints=[+1, -1, -1, 0, -1],  # Physics rules
-    random_state=42
-)
-Features (order matters):
+---
 
-frac_built (+1) — More concrete MUST predict hotter
-frac_tree (-1) — More trees MUST predict cooler
-frac_water (-1) — More water MUST predict cooler
-frac_crop (0) — Unconstrained
-frac_grass (-1) — More grass MUST predict cooler
-Why monotone constraints matter: The model is mathematically forbidden from ever concluding "trees make it hotter." Trust anchor for public defensibility.
+## 6. Technology stack
 
-3.3 SHAP Explainability
+### Backend (Python 3.11)
 
-models/explain/shap_explainer.py
-Uses shap.TreeExplainer
-Per-cell driver breakdown in °C
-Plain-language templates (FR-61)
-3.4 Scenario Simulation Engine ⭐
+| Technology | Purpose | Why chosen |
+|-----------|---------|------------|
+| **FastAPI** | REST API framework | Auto OpenAPI docs, async, Pydantic validation |
+| **LightGBM** | Gradient boosting ML | Fast, supports monotone constraints, interpretable |
+| **SHAP** | ML explainability | TreeExplainer gives per-cell feature attribution |
+| **Pandas / GeoPandas** | Data processing | Industry standard for tabular + spatial data |
+| **PyArrow / Parquet** | Data storage | Columnar format, fast reads, compact |
+| **WeasyPrint** | PDF generation | HTML→PDF with CSS, no external dependencies |
+| **Jinja2** | HTML templating | Powers the PDF report template |
+| **earthengine-api** | GEE Python client | Access to NASA/ESA satellite archives |
+| **osmnx** | OSM data | City boundary extraction |
+| **scikit-learn** | Preprocessing | Standard scalers, train/test splits |
+| **scipy / kendalltau** | Statistics | Mann-Kendall trend test |
+| **matplotlib** | Chart generation | Embedded PNG charts in PDF reports |
 
-models/transfer_function/scenario_engine.py
-Key function: simulate_intervention(cell_id, action, area_pct_change) → dict
-Supported actions:
+### Frontend (TypeScript)
 
-add_trees: frac_tree ↑, frac_built ↓ (cost: ₹800/tree × 100 trees/ha)
-add_concrete: frac_built ↑, frac_tree ↓ (cost: ₹0 private)
-restore_water: frac_water ↑, frac_built ↓ (cost: ₹15 lakh/ha)
-Performance: Sub-second response
+| Technology | Purpose | Why chosen |
+|-----------|---------|------------|
+| **Next.js 14** | React framework | App Router, SSR safety for MapLibre, fast builds |
+| **TypeScript** | Type safety | Catches null/undefined errors at compile time |
+| **MapLibre GL 4** | Interactive map | Open-source, no API key needed, WebGL rendering |
+| **Tailwind CSS** | Styling | Utility-first, fast iteration, dark theme |
+| **lucide-react** | Icons | Consistent icon set, tree-shakeable |
 
-8. PHASE 4: Backend API — ✅ COMPLETE
-What Was Built
-4.1 API Structure
+### Infrastructure
 
-text
+| Technology | Purpose |
+|-----------|---------|
+| **Google Earth Engine** | Satellite data processing (server-side) |
+| **CARTO Basemaps** | Map tiles (free, no API key required) |
+| **Parquet files** | Offline data storage (no database at runtime) |
 
-api/
-├── main.py                     # FastAPI entry point + CORS
-├── schemas/
-│   ├── heat.py                 # CityInfo, CellSummary, CellExplanation
-│   └── scenario.py             # ScenarioRequest, ScenarioResponse + UncertaintyBand (Phase 6)
-├── services/
-│   ├── spatial_service.py      # City + GeoJSON accessors (serves forecast heatmap)
-│   └── heat_service.py         # Cell rankings + SHAP wrapper
-└── routers/
-    ├── cities.py               # /cities, /aoi/{city_id}
-    ├── layers.py               # /layers/{city_id}
-    ├── cells.py                # /cells, /cell/{id}/explain
-    └── scenarios.py            # /scenario/evaluate
-4.2 All Endpoints (Verified Working)
+---
 
-Endpoint	Method	Purpose
-/health	GET	Server health check
-/	GET	Root status
-/docs	GET	Auto-generated Swagger UI
-/api/v1/cities	GET	List all pilot cities
-/api/v1/aoi/{city_id}	GET	City boundary GeoJSON
-/api/v1/layers/{city_id}	GET	Heat map GeoJSON (with ML forecasts)
-/api/v1/cells/{city_id}	GET	Ranked cell table (sortable)
-/api/v1/cell/{cell_id}/explain	GET	SHAP "Why is this hot?"
-/api/v1/scenario/evaluate	POST	Interactive scenario ΔT + cost + uncertainty + warning
-4.3 Key Technical Details
+## 7. Data sources
 
-CORS enabled for http://localhost:3000
-Pydantic v2 schema validation
-spatial_service.get_heatmap_geojson_service() prefers nagpur_forecast_heatmap.geojson (with ML predictions) over nagpur_heatmap.geojson if it exists
-Runs on port 8000 via uvicorn api.main:app --reload --port 8000
-9. PHASE 5: Initial Frontend — ✅ COMPLETE
-What Was Built
-5.1 Next.js 14 Project Structure
+All data is **free and open**. No paid APIs.
 
-text
+| Dataset | Provider | Resolution | What it gives us |
+|---------|----------|------------|-----------------|
+| **MODIS MOD11A1** | NASA Terra satellite | 1 km, daily | Land Surface Temperature (LST) — the core thermal signal |
+| **ESA WorldCover v200** | European Space Agency | 10 m, 2021 | Land cover classification (built-up, trees, water, crops, grass) |
+| **Sentinel-2 SR** | Copernicus / ESA | 10 m, 2024 | Spectral indices: NDVI (greenness), NDBI (built-up), MNDWI (water), albedo |
+| **GHSL BUILT_H** | JRC / European Commission | 100 m, 2018 | Building height (mean, max, std per cell) |
+| **VIIRS VCMSLCFG** | NOAA | 500 m, 2024 | Night lights radiance (proxy for economic activity / heat emission) |
+| **ERA5-Land** | ECMWF / Copernicus | ~11 km, monthly | Weather: temperature, wind, precipitation, solar radiation, soil moisture |
+| **SRTM** | NASA | 30 m | Elevation (used to filter rural reference pixels) |
+| **OpenStreetMap** | OSM community | Vector | City boundaries (via osmnx) |
 
-web/
-├── package.json                # Next.js 14.2.35, React 18.3, MapLibre 4.7, Tailwind
-├── tsconfig.json               # TypeScript with @/* path alias to ./src/*
-├── tailwind.config.ts          # Dark theme with brand colors
-├── postcss.config.js
-├── .env.local                  # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-└── src/
-    ├── app/
-    │   ├── layout.tsx          # Root HTML shell
-    │   ├── page.tsx            # Main dashboard page
-    │   └── globals.css         # MapLibre CSS + Tailwind
-    ├── components/
-    │   ├── map/
-    │   │   ├── HeatMap.tsx     # MapLibre wrapper (4 layer sources)
-    │   │   └── MapControls.tsx # Layer selector + Day/Night + Legend
-    │   ├── panels/
-    │   │   ├── CellDetailPanel.tsx
-    │   │   └── RankingTable.tsx
-    │   └── scenario/
-    │       └── ScenarioPainter.tsx
-    └── lib/
-        ├── types.ts
-        └── api.ts
-10. PHASE 6: Model Credibility Fixes — ✅ COMPLETE
-What Was Built
-6.1 Blocked Cross-Validation Utility
+### Why MODIS instead of Landsat?
 
-models/cv/blocked_split.py
-Functions:
+MODIS provides **daily thermal data** going back to 2000, which gives us
+5 years of multi-month archives to train on. Landsat has better spatial
+resolution (100 m thermal) but only passes every 16 days — too sparse for
+monthly composites at this stage.
 
-temporal_split(df, year_col, holdout_years) — Train on early years, test on latest
-spatial_block_split(df, lat_col, lon_col, n_blocks, block_size_deg) — Hold out geographic tiles
-null_hypothesis_test(...) — Trains model on shuffled targets → detects leakage
-6.2 Retrained M2 with Honest CV
+### What is SUHII?
 
-models/gbm/train_blocked.py
-Reports honest MAE per spatial fold
-Runs null-hypothesis test on every training run
-Saves CARD.json with truthful metrics
-Actual Honest Numbers (May 2024, 229 cells):
+**Surface Urban Heat Island Intensity (SUHII)** = city cell LST − rural
+reference LST.
 
-Spatial CV MAE: ~0.78 ± 0.09°C (real generalization)
-In-sample MAE: ~0.18°C (optimistic, memorization)
-Ratio: 4-5× worse than in-sample (as expected)
-Null test: ✅ NO LEAKAGE
-6.3 Quantile Uncertainty Models
+- Rural reference: 20 km ring around the city boundary, minus 2 km
+  peri-urban buffer, filtered to cropland + grassland pixels within
+  ±100 m elevation of the urban mean.
+- A positive SUHII means that cell is hotter than the surrounding
+  countryside. A value of +3°C means the cell is 3°C hotter than rural.
 
-models/gbm/train_quantile.py
-Trains 3 LightGBM quantile models (P10, P50, P90)
-Saves as lightgbm_suhii_night_p10.txt, _p50.txt, _p90.txt
-Calibration check: measures P10-P90 coverage on held-out data (target 80%)
-Note: LightGBM quantile objective doesn't support monotone_constraints — omitted for these 3 models
-6.4 Weather Normalization Proxy
+---
 
-pipeline/preprocess/weather_normalize.py
-Simplified proxy (not full ERA5 integration)
-Uses sklearn.linear_model.Ridge on rural-like cells
-Subtracts geographic macro-variation from SUHII
-Output: data/tables/nagpur_suhii_weather_normalized.parquet
-Note: Full ERA5 integration deferred to future
-6.5 Domain Guard (Extrapolation Detection)
+## 8. Data pipeline — step by step
 
-models/cv/domain_guard.py
-Uses Mahalanobis distance + chi-squared p-value
-Returns extrapolation_warning: bool, confidence: str, verdict: str
-Wired into scenario engine for every prediction
-6.6 Updated Scenario Engine
+The pipeline runs **once per city** (or when you want to refresh data).
+Everything is orchestrated as Python modules you run in sequence.
 
-models/transfer_function/scenario_engine.py — v3 with uncertainty + domain guard
-Returns:
+### Step 1 — City boundary + grid
+
+- Downloads the city boundary from OpenStreetMap using `osmnx`
+- Creates a regular 0.01° (~1.1 km) grid clipped to the boundary
+- Nagpur: 229 cells (`C0000`–`C0228`)
+- Pune: 414 cells (`P0000`–`P0413`) at 0.009° grid step
+
+Output: `data/boundaries/nagpur_grid.geojson`
+
+### Step 2 — Land Surface Temperature
+
+- Queries Google Earth Engine for MODIS MOD11A1 (Terra satellite)
+- Time range: March–June, 2020–2024 (5 years × 4 months = 20 composites)
+- Monsoon (July–September) is deliberately excluded — rain clouds corrupt
+  the thermal signal
+- Quality filter: accepts mandatory QA ≤ 1 (the relaxed rule is critical
+  for India — strict QA=0 rejects nearly all night observations due to
+  haze and dust)
+- Converts DN → Kelvin → Celsius: `LST_°C = (band × 0.02) − 273.15`
+- Computes monthly medians per cell
+
+Output: `data/tables/nagpur_monthly_lst_multiyear.parquet`
+
+### Step 3 — Rural reference temperature
+
+- Queries Google Earth Engine for MODIS MOD11A1 (Terra satellite)
+- Time range: March–June, 2020–2024 (5 years × 4 months = 20 composites)
+- Monsoon (July–September) is deliberately excluded — rain clouds corrupt
+  the thermal signal
+- Quality filter: accepts mandatory QA ≤ 1 (the relaxed rule is critical
+  for India — strict QA=0 rejects nearly all night observations due to
+  haze and dust)
+- Converts DN → Kelvin → Celsius: `LST_°C = (band × 0.02) − 273.15`
+- Computes monthly medians per cell
+
+Output: `data/tables/nagpur_monthly_lst_multiyear.parquet`
+
+### Step 3 — Rural reference temperature
+
+- ESA WorldCover 2021 at 10 m resolution
+- Aggregates pixel class fractions per 1 km cell:
+  - `frac_built` — impervious surfaces (class 50)
+  - `frac_tree` — tree cover (class 10)
+  - `frac_water` — water bodies (class 80)
+  - `frac_crop` — cropland (class 40)
+  - `frac_grass` — grassland (class 30)
+  - `frac_bare` — bare ground (class 60)
+
+Output: `data/tables/nagpur_landcover.parquet`
+
+### Step 6 — Spectral indices
+
+- **GHSL BUILT_H (2018):** mean/max/std building height per cell
+- **VIIRS (2024):** mean/max night light radiance per cell
+- **Derived features:**
+  - `height_to_width_ratio = mean_height / 15` (assumed 15 m street width)
+  - `svf_proxy = 1 − 0.5 × H/W` clamped [0.05, 1]
+    (SVF = Sky View Factor — how much sky is visible from ground level;
+    lower SVF = more trapped heat)
+
+Output: `data/tables/nagpur_morphology.parquet`
+
+### Step 8 — ERA5 weather data
+
+- ERA5-Land monthly aggregates, March–June 2020–2024
+- Variables: 2m temperature, dewpoint, skin temperature, wind speed,
+  dewpoint depression, precipitation, solar radiation, soil moisture
+- All cities share one value per month (ERA5 resolution ~11 km covers
+  the whole city uniformly)
+
+Output: `data/tables/nagpur_era5.parquet`
+
+### Step 9 — Weather normalization
+
+**Why?** A hot May 2022 vs a cool May 2023 makes the raw SUHII jump even
+if nothing changed on the ground. We need to remove the weather signal to
+see the land-cover signal.
+
+**How:**
+1. Compute monthly anomalies for all 8 weather variables
+   (actual − long-term mean for that calendar month)
+2. Identify "rural-like" cells: `frac_built < 0.20` AND
+   `(crop + grass) > 0.50`
+3. Train a small LightGBM model on rural cells:
+   `SUHII ~ weather_anomalies`
+4. Predict `E[SUHII | weather]` for all cells
+5. Subtract: `SUHII_normalized = SUHII_raw − predicted_weather_component`
+
+Output: `data/tables/nagpur_suhii_weather_normalized.parquet`
+
+### Step 10 — Feature matrix assembly + model training
+
+- Merges all the above tables by `cell_id` + `year` + `month`
+- Result: 229 cells × 20 months = 4,580 rows × 19 features + 2 targets
+- Also trains the v2 LightGBM models (see §9)
+
+Output: `data/tables/nagpur_feature_matrix.parquet`
+        `models/registry/lightgbm_suhii_night_v2.txt`
+        `models/registry/lightgbm_suhii_day_v2.txt`
+
+### Step 11 — Web GeoJSON export
+
+- Merges feature matrix onto the grid geometry **by `cell_id`** (never
+  by row position — that was the original bug)
+- Adds BAU forecast fields: `suhii_night_2031 = observed + 0.42`,
+  `suhii_night_2041 = observed + 1.18`
+- Outputs 3 GeoJSON files per city (observed, normalized, forecast)
+
+Output: `data/demo/nagpur_heatmap_normalized.geojson` (committed)
+
+---
+
+## 9. Machine learning models
+
+### Model ladder
+
+### Why LightGBM?
+
+1. **Monotone physics constraints** — we can encode domain knowledge:
+   - More concrete → hotter (`frac_built`: +1)
+   - More trees → cooler (`frac_tree`: −1)
+   - More water → cooler (`frac_water`: −1)
+   - This makes it **mathematically impossible** for the model to conclude
+     that planting trees heats the city
+2. Fast inference (milliseconds per prediction)
+3. Works well on small datasets (229–4,580 rows)
+4. Built-in feature importance
+
+### Feature list (v2, 19 features)
+
+| Feature | Source | Physics role |
+|---------|--------|-------------|
+| `frac_built` | WorldCover | Heat absorber (+) |
+| `frac_tree` | WorldCover | Cooling (−) |
+| `frac_water` | WorldCover | Cooling (−) |
+| `frac_crop` | WorldCover | Neutral (0) |
+| `frac_grass` | WorldCover | Mild cooling (−) |
+| `ndvi` | Sentinel-2 | Vegetation proxy (−) |
+| `ndbi` | Sentinel-2 | Built-up intensity (+) |
+| `mndwi` | Sentinel-2 | Water proxy (−) |
+| `albedo` | Sentinel-2 | Reflectivity (−) |
+| `building_height_mean` | GHSL | Canyon trapping (+) |
+| `svf_proxy` | GHSL derived | Sky view factor (−) |
+| `night_lights_mean` | VIIRS | Anthropogenic heat (+) |
+| `era5_t2m_c_anomaly` | ERA5 | Weather (0) |
+| `era5_dewpoint_depression_anomaly` | ERA5 | Weather (0) |
+| `era5_wind_speed_anomaly` | ERA5 | Weather (0) |
+| `era5_precip_mm_anomaly` | ERA5 | Weather (0) |
+| `era5_solar_mj_anomaly` | ERA5 | Weather (0) |
+| `era5_soil_moist_anomaly` | ERA5 | Weather (0) |
+| `month` | Derived | Seasonality (0) |
+
+### Validation results (honest)
+
+| Test | Result | Pass/Fail |
+|------|--------|-----------|
+| v1 Spatial blocked CV MAE | 0.621°C ± 0.095 | ✅ < 0.9°C target |
+| v2 Night blocked CV MAE | 0.701°C ± 0.085 | ✅ < 0.9°C target |
+| v2 Night R² | 0.606 | ✅ |
+| v2 Day blocked CV MAE | 0.732°C ± 0.038 | ✅ |
+| Null hypothesis (shuffled targets) | Shuffled MAE 1.33 vs real 0.70 | ✅ No leakage |
+| **City-block CV (Nagpur↔Pune)** | **MAE 1.107°C, R² −0.199** | **❌ Fails cross-city** |
+| Quantile calibration | 62.4% coverage vs 80% target | ❌ Overconfident bands |
+| Counterfactual (2020→2024) | r = 0.713, Spearman 0.765 | ✅ r ≥ 0.60 target |
+
+**What the failures mean in practice:**
+- Cross-city failure → Pune predictions carry a lower-confidence warning
+- Overconfident bands → scenario ΔT ranges are indicative, not precise
+
+### SHAP explainability
+
+For every selected cell, we compute real SHAP values using
+`shap.TreeExplainer` on the v1 booster:
+
+```python
+explainer = shap.TreeExplainer(booster)
+shap_values = explainer.shap_values(cell_features)
+# → per-feature °C contribution to this cell's SUHII
+frac_built:  +1.85°C  (78% sealed surface — primary driver)
+night_lights: +0.45°C (high anthropogenic heat emission)
+frac_tree:   −0.65°C  (12% canopy provides some cooling)
+frac_water:  −0.30°C  (small water body helps)
+frac_grass:  −0.15°C  (minimal parkland)FastAPI (api/main.py)
+    │
+    ├── /api/v1/cities          → spatial_service.list_cities_service()
+    ├── /api/v1/aoi/{city}      → spatial_service.get_city_aoi_service()
+    ├── /api/v1/layers/{city}   → spatial_service.get_heatmap_geojson_service()
+    ├── /api/v1/cells/{city}    → heat_service.get_ranked_cells_service()
+    ├── /api/v1/cell/{id}/explain → heat_service.get_cell_explanation_service()
+    ├── /api/v1/scenario/evaluate → scenario_engine.simulate_intervention()
+    ├── /api/v1/scenario/compare  → comparison_engine.compare_scenarios()
+    ├── /api/v1/report/generate   → generator.build_pdf_report()
+    └── /api/v1/export/{city}     → GeoJSON / CSV downloadcurl 
+
+Health check
+
+Bash
+
+curl http://localhost:8000/health
+
 JSON
 
 {
-  "delta_T_degC": {"p10": ..., "p50": ..., "p90": ...},
-  "original_suhii_night": {...},
-  "new_suhii_night": {...},
-  "extrapolation_warning": bool,
-  "confidence": "high|medium|low",
-  "domain_verdict": "..."
+  "status": "healthy",
+  "capabilities": {
+    "demo_map": true,
+    "parquet_tables": false,
+    "ml_models": true,
+    "shap": false,
+    "scenarios": false,
+    "pdf_reports": false
+  }
 }
-6.7 Updated API Schemas
 
-api/schemas/scenario.py — Added UncertaintyBand, extrapolation fields
-6.8 Documentation
 
-docs/VALIDATION.md — All validation numbers, including failures
-docs/LIMITATIONS.md — 10 documented gaps, when NOT to use Chhaon
-11. PHASE 7: Advanced Interactive Frontend — ✅ COMPLETE
-What Was Built
-7.1 4-Way Layer Source Selector
+web/src/app/page.tsx  (single dashboard page)
+    │
+    ├── <HeatMap>              MapLibre GL choropleth
+    ├── <MapControls>          Layer switcher + opacity slider
+    ├── <TimeMachine>          4-frame layer animator
+    ├── <CityStatsBar>         Header KPIs (fetched from API)
+    ├── <SearchAndInfo>        Cell search + model card modal
+    ├── <CellDetailPanel>      Selected cell stats + SHAP + comparator
+    ├── <RankingTable>         Sortable hotspot table + CSV export
+    ├── <ScenarioPainter>      Single-cell intervention simulator
+    ├── <ScenarioComparison>   A/B/C scenario comparison
+    └── <ReportModal>          PDF generation trigger
 
-Prominent gradient buttons with icons in top-right controls
-Observed 2024 (blue) — Real satellite data
-ML Fit 2024 (purple) — Model's understanding
-Forecast 2031 (orange) — 7-year projection
-Forecast 2041 (red) — 17-year projection
-7.2 Time Machine Slider
+const [cityId, setCityId]           // "nagpur" | "pune" | ...
+const [layerSource, setLayerSource] // "observed" | "ml_fit" | "forecast_2031" | "forecast_2041"
+const [basemapStyle, setBasemapStyle] // "dark" | "streets"
+const [selectedCellId, setSelectedCellId] // "C0426" | null
+const [geojsonData, setGeojsonData] // full city GeoJSON
+const [rankings, setRankings]       // array of cell summaries
 
-Bottom-center animated timeline
-Play/Pause button auto-scrubs 2024 → 2031 → 2041
-Clickable timeline dots
-Reset button
-2-second interval between states
-7.3 Display Mode Toggle
+// Fetch the heatmap GeoJSON for a city
+const geojson = await fetchHeatmapGeoJSON("nagpur")
 
-SUHII Anomaly (default) — °C above/below rural
-Absolute °C — Raw temperature values
-7.4 Basemap Style Selector
+// Fetch ranked cells
+const rankings = await fetchCellRankings("nagpur", "suhii_night", 500)
 
-Dark Canvas — Esri World Dark Gray (high-contrast thermal)
-Detailed Streets (OSM) — OpenStreetMap with buildings, alleyways, POIs
-Satellite Aerial — Esri World Imagery (real photography) + Reference labels
-7.5 Heat Layer Transparency Slider
+// Fetch SHAP explanation for a cell
+const explanation = await fetchCellExplanation("C0426")
 
-20% to 95% opacity
-Lets users see building footprints underneath heat colors
-7.6 Rich Cell Detail Panel (3 tabs)
+// Run a scenario
+const result = await evaluateScenario({
+  city_id: "nagpur",
+  cell_id: "C0426",
+  action: "add_trees",
+  area_pct_change: 25,
+})
 
-Current — SUHII cards, Day/Night LST, Land cover bars, "Test AI Interventions" button
-AI Diagnosis — SHAP drivers with plain-language "Heats by +2.10°C" / "Cools by 1.40°C"
-Future — Trend bar chart showing Today → 2031 → 2041
-7.7 AI Scenario Studio with Transparency Trace
+. Map engine
+MapLibre GL
 
-Choose action (Plant Trees / Restore Water / Build Concrete)
-Slide coverage % (5-50%)
-"Ask AI to Evaluate Impact" button
-Live AI Trace shows the model "thinking":
-text
+We use MapLibre GL (open-source fork of Mapbox GL) for the interactive
+map. It renders using WebGL directly in the browser — no server-side
+rendering.
+Basemaps
 
-> Initializing LightGBM model...
-> Extracting local geographic features...
-> Applying monotone physics constraints...
-> Running 3 quantile models (P10/P50/P90)...
-> Inference complete.
-Returns ΔT with P10-P90 uncertainty range
-Returns ₹ cost in Indian format (Lakh/Crore)
-Extrapolation warning for unrealistic scenarios
-7.8 City Stats Bar (Header)
+Free CARTO basemaps — no API key required:
 
-Mean SUHII, Peak Heat, Built %, Canopy %, Hotspot Count
-Live updates from data
-7.9 Cell Search with Autocomplete
+    Dark Matter (default) — dark background makes heat colours pop
+    Voyager (streets) — shows road network for context
 
-Search by cell ID (e.g. "C0426")
-Preview shows SUHII value
-Click to jump to cell on map
-7.10 Model Card Modal
+Heat choropleth
 
-Click ⓘ button
-Shows: Purpose, Architecture, Honest Metrics, Data Sources, Limitations, Reproducibility commands
-7.11 AI Context Banner
+The city grid GeoJSON is loaded as a MapLibre source. Each cell is
+coloured by its SUHII value using a 10-stop colour ramp:
 
-Dynamic text under header
-Explains what user is looking at:
-"Satellite Observation: Real historical temperature recorded by NASA MODIS"
-"AI Forecast: Projects 7 years of concrete sprawl..."
-7.12 Ranking Table Enhancements
 
-Sortable by Night SUHII, Day SUHII, Concrete %, Tree Canopy %
-Filter chips: All / 🔥 Hot / ❄️ Cool / 🌳 High Canopy
-CSV export button
-Collapsible
-7.13 Layout Fixes
+−999 → #1e293b  (no data — invisible on dark background)
+−4.0 → #1e3a8a  (deep cool — dark blue)
+−2.0 → #2563eb  (cool — blue)
+−0.5 → #38bdf8  (mild cool — light blue)
+ 0.0 → #5eead4  (neutral — teal)
+ 1.0 → #fbbf24  (warm — amber)
+ 2.0 → #f59e0b  (hot — orange)
+ 3.0 → #ea580c  (very hot — deep orange)
+ 4.0 → #dc2626  (critical — red)
+ 5.5 → #991b1b  (extreme — dark red)
+ 7.0 → #450a0a  (maximum — near black red)
 
-Left panel positioned top-3 left-3 bottom-[280px]
-Right controls at top-[72px] right-3
-Time Machine at bottom-[280px] center
-Ranking table at bottom-0 with h-[270px]
-Logo/Search/Banner hide when left panel opens (no overlap)
-7.14 SSR Fix (Critical Runtime)
+"observed"      → suhii_night_normalized
+"ml_fit"        → suhii_night_ml  (weather-normalized observed)
+"forecast_2031" → suhii_night_2031  (observed + 0.42°C)
+"forecast_2041" → suhii_night_2041  (observed + 1.18°C)
 
-HeatMap component loaded via dynamic() with ssr: false
-Prevents Next.js server-side rendering stack overflow with MapLibre
-7.15 Property Coercion (Critical Runtime)
 
-coerceCellProps() converts MapLibre string properties → typed numbers
-num() / fmt() helper functions in CellDetailPanel prevent .toFixed() crashes on undefined
-12. Comprehensive PRD vs Delivered Comparison
-Functional Requirements Coverage
-FR ID	Requirement	Status	Notes
-FR-01	AOI selection (city or bbox)	✅ Partial	Nagpur only; city selector in config/cities.yaml
-FR-02	AOI upload (GeoJSON/shapefile)	❌	Deferred to Phase 8+
-FR-03	AOI validation & error messages	⚠️ Partial	API returns 404 for unknown cities
-FR-04	Rural reference visualization	⚠️ Partial	Computed but not shown as overlay layer
-FR-05	Ward polygon overlay	❌	Using 1km grid instead of wards
-FR-10	LST day/night raster layer	✅	Both lst_day and lst_night served
-FR-11	Time slider (year/month)	⚠️ Partial	Time Machine only cycles Observed→2031→2041, not months
-FR-12	Trend map (°C/decade)	❌	No multi-year data yet
-FR-13	SUHII anomaly map	✅	Primary map view
-FR-14	Land-cover map	⚠️ Partial	Fractions shown per cell, no dedicated LC layer
-FR-15	Multi-year LC change	❌	Single snapshot only (2021)
-FR-16	Spectral indices (NDVI, NDBI)	❌	Not extracted
-FR-17	Urban morphology (building height)	❌	GHSL not extracted
-FR-18	Transect tool	❌	Deferred
-FR-20	Hotspot polygons (P90+)	⚠️ Partial	Ranking table shows hotspots via filter chip
-FR-21	Ward ranking table	✅	Sortable, filterable, exportable
-FR-22	Vulnerability index	❌	No population/socioeconomic data
-FR-23	Alert generation	❌	Non-goal N3
-FR-24	Population-weighted stats	❌	No pop data
-FR-30	Forecast layer (2031/2041)	✅	Available as layer sources
-FR-31	Forecast uncertainty visualization	✅	P10-P90 in scenario engine, shown in painter
-FR-32	Uncertainty bands on all predictions	✅	Delivered in Phase 6
-FR-33	Scenario pathways (BAU vs Plan)	⚠️ Partial	Only BAU sprawl implemented
-FR-34	Model card display	✅	Modal accessible via ⓘ button
-FR-40	Scenario painter	✅	AI Scenario Studio with 3 actions
-FR-41	Multi-lever palette	⚠️ Partial	3 actions (trees/water/concrete), not full 7
-FR-42	Live ΔT calculation	✅	Sub-3s response
-FR-43	Cost calculation with overrides	✅	Default rates, cost_overrides in API
-FR-44	Scenario comparison (2-4 side-by-side)	❌	Deferred
-FR-45	Save scenario	❌	Deferred (no persistence layer)
-FR-46	Master plan upload	❌	Deferred
-FR-47	Extrapolation warning	✅	Domain guard delivered in Phase 6
-FR-50	GeoJSON export	⚠️ Partial	Full map GeoJSON via API, no per-layer export
-FR-51	CSV export	✅	Ranking table CSV export
-FR-52	GeoTIFF export	❌	Deferred
-FR-53	PDF report	❌	Phase 8
-FR-54	API for third-party integration	✅	Auto-generated OpenAPI at /docs
-FR-55	Attribution & data source footer	⚠️ Partial	Attribution in Model Card, not on every export
-FR-60	LST-vs-Air-Temp disclaimer	✅	In Model Card, Limitations doc
-FR-61	"Why is this hot?" panel	✅	AI Diagnosis tab with SHAP
-FR-62	Data quality badges	❌	Not shown on UI (metadata only)
-FR-63	Bilingual (English + Marathi)	❌	English only
-FR-64	Search functionality	✅	Cell ID autocomplete search
-FR-65	Risk + recommendation bundling	✅	Every scenario shows both ΔT + cost
-Non-Functional Requirements Coverage
-NFR ID	Requirement	Status	Notes
-NFR-01	Latency p95 < 3s	✅	Scenario evaluate ~50ms + artificial 1.2s trace
-NFR-02	50 concurrent users	✅	FastAPI async, should scale
-NFR-03	Uptime 99%	⚠️	Dev only, no monitoring
-NFR-04	Data freshness	⚠️ Partial	Static May 2024 snapshot
-NFR-05	Reproducibility	✅	All scripts documented, make targets
-NFR-06	Geographic scalability	⚠️ Partial	Config supports 4 cities, only 1 has data
-NFR-07	Model swappability	✅	ADR-03 enforced
-NFR-08	Cost < ₹5,000/month	✅	Not yet deployed, but architecture supports it
-NFR-09	Accessibility (a11y)	⚠️ Partial	No keyboard nav, no ARIA labels
-NFR-10	Mobile responsive	❌	Desktop-only currently
-NFR-11	Security (HTTPS, no PII)	⚠️ Partial	No auth needed yet; no PII collected
-NFR-12	Licensing (open data)	✅	All sources are CC-BY or public domain
-NFR-13	Observability	❌	No Prometheus/Grafana
-NFR-14	Structured logging	⚠️ Partial	FastAPI defaults, no custom logging
-NFR-15	Model registry versioning	✅	CARD.json, code_version tracked
-Risk Coverage
-Risk	Status	Mitigation Delivered
-R1 — Spatial leakage	✅	Blocked CV + null test
-R2 — Judge: "just predicting weather"	✅	SUHII framing, rural reference visible in Model Card
-R3 — LST-vs-Ta gap challenged	✅	Explicit disclaimer everywhere
-R4 — Scope explosion	⚠️	Non-goals documented, but multi-city not tackled
-R5 — GEE quota	✅	Pre-materialized cache
-R6 — Model overfits	✅	Documented in VALIDATION.md
-R7 — Extrapolation	✅	Domain guard
-R8 — "Risk-only" exports	✅	Every scenario has recommendation
-R9 — Cost figures challenged	✅	User-overridable via cost_overrides
-13. Comprehensive TRD vs Delivered Comparison
-TRD Section 3 — Data Layer
-Dataset	TRD Required	Delivered
-MODIS MOD11A1	✅ Required	✅ Extracted (May 2024)
-MODIS MYD11A1 (Aqua)	✅ Required	❌ Only Terra used
-Landsat 8/9 TIRS	✅ Required	❌ Not extracted
-ECOSTRESS	Optional	❌
-Dynamic World	✅ Required	❌ Only WorldCover snapshot
-ESA WorldCover 2021	✅ Required	✅ Delivered
-ESA WorldCover 2020	Optional	❌
-GHSL Built Surface	✅ Required	❌ Not extracted
-GHSL Built Height	✅ Required	❌ Not extracted
-Sentinel-2 MSI	✅ Required	❌ Not extracted
-VIIRS Night Lights	✅ Required	❌ Not extracted
-ERA5	✅ Required	⚠️ Simplified proxy only
-SRTM/NASADEM	✅ Required	❌ Not extracted
-JRC GSW (Water)	✅ Required	❌ Not extracted
-Ward boundaries	✅ Required	⚠️ Using 1km grid instead
-Coverage: ~30% of specified data layers extracted. Enough for prototype, insufficient for production accuracy.
+┌─────────────────────────────────────────────────────────────────┐
+│                    GOOGLE EARTH ENGINE                          │
+│  MODIS LST · WorldCover · Sentinel-2 · GHSL · VIIRS · ERA5    │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  earthengine-api (Python)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    PYTHON PIPELINE                              │
+│  boundaries → LST → rural_ref → SUHII → landcover → S2 →      │
+│  morphology → ERA5 → weather_normalize → feature_matrix        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  Parquet files (git-ignored)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    MODEL TRAINING                               │
+│  LightGBM v1 (5 feat) · v2 (19 feat) · Quantiles (P10/50/90) │
+│  SHAP explainer · Domain guard · City-block CV                 │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  .txt boosters (committed to git)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               scripts/build_heatmaps.py                        │
+│  Merge parquet → grid GeoJSON (by cell_id, never by row)       │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  data/demo/*.geojson (committed)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    FASTAPI BACKEND                              │
+│  Serves GeoJSON · Rankings · SHAP · Scenarios · PDFs          │
+│  Port 8000 · No DB · No cache · Files only                    │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  HTTP REST (NEXT_PUBLIC_API_BASE_URL)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  NEXT.JS FRONTEND                               │
+│  MapLibre choropleth · Cell panels · Scenario UI · PDF modal   │
+│  Port 3000                                                     │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  Browser
+                            ▼
+                  MUNICIPAL PLANNER
+                  
 
-TRD Section 4 — Ingestion Pipeline Stages
-Stage	TRD Requirement	Delivered
-Stage 1: MODIS QA masking	4 overpass series (Terra day/night + Aqua day/night)	⚠️ Only Terra day/night
-Stage 2: Gap-filling	STL decomposition + IDW spatial	❌ Not implemented (assumed clean May data)
-Stage 3: Landsat single-channel LST	✅ Required	❌ Skipped
-Stage 4: Downscaling 1km→100m	LightGBM residual	❌ Not implemented (Gap #7)
-Stage 5: Rural reference construction	Multi-criteria with sensitivity analysis	✅ Delivered (simplified)
-Stage 6: Weather normalization	ERA5 rural-only response subtraction	⚠️ Simplified proxy only
-TRD Section 5 — Feature Engineering
-Feature Group	TRD Required Count	Delivered
-Thermal history (lag, rolling, seasonality)	~10 features	❌ Single-month data
-Land cover fractions	8 classes	✅ 6 classes delivered
-Land cover change (Δfrac)	4-5 features	❌ Single snapshot
-Spectral indices	5 features	❌ Not extracted
-Urban morphology	6-8 features	❌ Not extracted
-Night lights	3 features	❌ Not extracted
-Terrain	4 features	❌ Not extracted
-Population	3 features	❌ Not extracted
-Meteorology	8 features	⚠️ Simplified only
-Geometry (distances)	5 features	❌ Not computed
-Temporal context	4 features	❌ Single month
-Quality flags	5 features	❌ Not tracked
-Coverage: 6 of ~55-70 features. This is the biggest gap between TRD and delivery.
+page.tsx
+ ├─ on load → fetchHeatmapGeoJSON("nagpur")
+ │              → GET /api/v1/layers/nagpur
+ │              → spatial_service.get_heatmap_geojson_service()
+ │              → reads data/demo/nagpur_heatmap_normalized.geojson
+ │              → returns GeoJSON to page.tsx → setGeojsonData()
+ │
+ ├─ on load → fetchCellRankings("nagpur")
+ │              → GET /api/v1/cells/nagpur
+ │              → heat_service.get_ranked_cells_service()
+ │              → reads same GeoJSON, extracts + sorts properties
+ │              → returns array of cell summaries → setRankings()
+ │
+ ├─ renders → <HeatMap geojsonData={geojsonData} />
+ │              → MapLibre GL adds GeoJSON as source
+ │              → colours each polygon by suhii_night_normalized
+ │              → click → setSelectedCellId("C0426")
+ │
+ ├─ renders → <CellDetailPanel cellId="C0426" />
+ │              → fetchCellExplanation("C0426")
+ │              → GET /api/v1/cell/C0426/explain
+ │              → heat_service.get_cell_explanation_service()
+ │              → shap_explainer.explain_cell("C0426")
+ │              → loads Parquet + v1 booster → SHAP values
+ │              → returns drivers → renders bar chart
+ │
+ ├─ renders → <ScenarioPainter cellId="C0426" />
+ │              → evaluateScenario({action: "add_trees", area_pct: 25})
+ │              → POST /api/v1/scenario/evaluate
+ │              → scenario_engine.simulate_intervention()
+ │              → loads Parquet row for C0426
+ │              → transfers frac_built → frac_tree
+ │              → predicts with P10/P50/P90 quantile models
+ │              → domain guard check
+ │              → returns ΔT + cost + warnings
+ │
+ └─ renders → <ReportModal cityId="nagpur" />
+                → POST /api/v1/report/generate
+                → generator.build_pdf_report("nagpur")
+                → loads feature_matrix.parquet
+                → computes real SHAP chart
+                → renders Jinja2 template
+                → WeasyPrint → PDF
+                → returns download URL
 
-TRD Section 6 — Target Variables
-Head	TRD Required	Delivered
-H1 — SUHII spatial	✅ Required	✅ Delivered
-H2 — SUHII trend (Δ per decade)	✅ Required	⚠️ Simplified sprawl only
-H3 — Hotspot classification (binary)	✅ Required	❌ Not trained as separate head
-TRD Section 7 — Modelling
-Model Tier	TRD Required	Delivered
-M0 — Climatology baseline	✅ Required	❌ Not implemented
-M1 — OLS baseline	✅ Required	✅ Delivered
-M2 — LightGBM (with monotone)	✅ Champion	✅ Delivered
-M3 — ConvLSTM/Transformer	Optional challenger	❌ Skipped per ADR-03
-M4 — LULC change model (cellular automaton)	✅ Required	⚠️ Flat rate proxy only
-M5 — Transfer function	✅ Required	✅ Delivered
-Quantile heads (P10/P50/P90)	✅ Required	✅ Delivered in Phase 6
-Blocked CV harness	✅ Required	✅ Delivered in Phase 6
-Null-hypothesis leakage test	✅ Required	✅ Delivered in Phase 6
-SHAP explainability	✅ Required	✅ Delivered
-TRD Section 8 — Scenario Engine
-Feature	TRD Required	Delivered
-M4 Land-use change projection	Cellular automaton with suitability	⚠️ Flat rate proxy
-M5 Model-based transfer	Full inference on projected features	✅ Delivered
-M5 Coefficient-based transfer	Panel regression for reports	❌ Not implemented
-Sparse delta evaluation	Client sends only edits	⚠️ Currently sends full request
-Spillover buffer (500m)	Distance-decay kernel	❌ Single-cell only
-Extrapolation guard	Mahalanobis + p-value	✅ Delivered in Phase 6
-Mitigation portfolio optimizer	Greedy ranking	❌ Not implemented
-Cost overrides via levers.yaml	✅ Required	⚠️ Hardcoded rates in Python
-TRD Section 9 — API
-Endpoints Delivered vs Required:
+# Required
+Python 3.11+
+Node.js 20+
+npm 9+
 
-Endpoint	TRD Required	Status
-POST /aoi	✅	⚠️ Only pre-configured cities
-GET /aoi/{id}/status	✅	❌
-GET /aoi/{id}/rural-reference	✅	❌
-GET /layers/{aoi_id}?layer=&date=	✅	✅ Simplified
-GET /tiles/{z}/{x}/{y} (TiTiler)	✅	❌ GeoJSON only, no COG tiles
-GET /wards/{aoi_id}	✅	✅ As /cells/{city_id}
-GET /ward/{id}/explain	✅	✅ As /cell/{id}/explain
-GET /hotspots/{aoi_id}	✅	⚠️ Via filter chip on frontend
-POST /scenario/evaluate	✅	✅ Full uncertainty + warning
-POST /scenario/compare	✅	❌
-GET /scenario/{id}	✅	❌ No persistence
-GET /forecast/{aoi_id}?horizon=	✅	⚠️ Via layer sources
-POST /report	✅	❌ Phase 8
-GET /export/{id}?format=	✅	⚠️ Only GeoJSON via layers endpoint
-GET /model-card/{model_id}	✅	⚠️ Via frontend modal, not API endpoint
-/healthz /readyz /metrics	✅	⚠️ Only /health
-TRD Section 10 — Frontend
-Screen	TRD Required	Delivered
-S1 — Landing / City Picker	✅	⚠️ Direct to Nagpur, no picker
-S2 — Main Explorer Map	✅	✅ Full featured
-S3 — Cell Detail Panel	✅	✅ 3 tabs with SHAP
-S4 — Ranking Table	✅	✅ Sortable + filterable
-S5 — Scenario Studio ⭐	✅	✅ With AI trace + uncertainty
-S6 — Mitigation Planner	✅	❌ No portfolio optimizer
-S7 — Forecast View	✅	✅ Via Time Machine
-S8 — Report Builder	✅	❌ Phase 8
-S9 — Methodology & Model Card	✅	✅ Modal accessible
-S10 — Public Read-Only Map	✅	❌ No separate public view
-TRD Section 11 — Validation
-Method	TRD Required	Delivered
-Blocked CV (V1/V2/V3)	✅ Must	✅ V1 (temporal) + V2 (spatial); V3 (city) needs multi-city data
-Landsat ↔ MODIS cross-check	✅ Must	❌ No Landsat
-IMD station comparison	✅ Must	❌ No IMD data access
-Field campaign	Should	❌ Not conducted
-Published study triangulation	✅ Must	⚠️ Informal only
-YCEO SUHI product	Should	❌
-Backtest M4	✅ Must	❌ M4 is simplified
-Historical counterfactual test	Should	❌ Not conducted
-Shuffled-target null test	✅ Must	✅ Delivered
-Calibration check	Must	✅ Delivered
-Expert review	✅ Must	❌ Not conducted
-TRD Section 12 — Infrastructure
-Component	TRD Required	Delivered
-Docker Compose	✅	❌ Phase 9
-Object storage (COG)	✅	❌ Local files only
-Redis cache	✅	⚠️ Installed but not wired
-TiTiler tile server	✅	❌
-Prefect orchestration	✅	❌ Manual scripts
-GitHub Actions CI	✅	❌
-Backup/restore	✅	❌
-TRD Section 13 — Data Quality & Monitoring
-Gate	TRD Required	Delivered
-Coverage ≥ 95%	✅	⚠️ Manual check
-Cloud gate ≥ 4 valid days	✅	❌ Not automated
-Value range checks	✅	❌
-Distribution shift (KS test)	✅	❌
-Rural reference min area	✅	⚠️ Manual
-Sensor agreement	✅	❌ Only Terra
-Boundary join 100%	✅	✅ Verified once
-Byte-identical reproducibility	✅	⚠️ Not tested
-14. Remaining Gaps (Complete Analysis)
-🔴 Critical Gaps
-#	Gap	Impact	Effort	Priority
-G1	Multi-year data (only May 2024)	HIGH	Days	🔴
-G2	Multi-city training (only Nagpur)	HIGH	Days	🔴
-G3	Blocked CV	✅ FIXED (Phase 6)	—	—
-G4	Uncertainty bands	✅ FIXED (Phase 6)	—	—
-G5	Full ERA5 weather normalization	MEDIUM	Days	🟠
-G6	Cellular automaton sprawl model (M4)	HIGH	Days	🟠
-G7	1km → 100m downscaling	HIGH	Days	🟠
-G8	Historical counterfactual validation	HIGH	Hours	🟠
-G9	Extrapolation warnings	✅ FIXED (Phase 6)	—	—
-G10	Monsoon data handling (Jun-Sep)	MEDIUM	Hours	🟡
-🟠 High-Impact Feature Gaps
-#	Gap	Impact	Effort
-G11	PDF report generation (WeasyPrint)	HIGH	Hours
-G12	Scenario comparison (2-4 side-by-side)	MEDIUM	Hours
-G13	Multi-cell paint (drag to select)	MEDIUM	Hours
-G14	Save scenario (persistence + shareable URL)	MEDIUM	Hours
-G15	Master plan upload	MEDIUM	Days
-G16	Mitigation portfolio optimizer	MEDIUM	Days
-G17	AOI upload (GeoJSON/shapefile)	MEDIUM	Hours
-G18	Coefficient-based transfer function (panel regression)	MEDIUM	Hours
-🟡 Medium-Impact Gaps
-#	Gap	Impact	Effort
-G19	Landsat 100m LST	MEDIUM	Days
-G20	GHSL Built Height + Sky View Factor	MEDIUM	Hours
-G21	Sentinel-2 spectral indices (NDVI, NDBI)	MEDIUM	Hours
-G22	VIIRS Night Lights	LOW	Hours
-G23	ERA5 full integration	MEDIUM	Days
-G24	Real ward boundaries (not 1km grid)	HIGH	Depends on data availability
-G25	Population weighting	MEDIUM	Hours
-G26	Data quality badges on UI	LOW	Hours
-G27	Bilingual Marathi support	LOW	Days
-G28	Mobile responsive design	LOW	Days
-G29	Public read-only view	LOW	Hours
-🟢 Infrastructure Gaps
-#	Gap	Impact	Effort
-G30	Docker Compose	Deployment	Hours
-G31	Redis scenario caching	Perf	Hours
-G32	TiTiler COG tile server	Perf	Hours
-G33	Prefect orchestration	Ops	Days
-G34	Prometheus/Grafana observability	Ops	Days
-G35	GitHub Actions CI	Dev	Hours
-G36	Automated data quality gates	Ops	Hours
-G37	Demo cache baker	Demo	Hours
-Deep Learning (Deferred per TRD ADR-03)
-#	Gap	Status
-G38	M3 ConvLSTM challenger	Per ADR-03, only if M2 fails 10%+ threshold
-G39	Grad-CAM for M3	Only needed if G38 is done
-15. PHASE 8: Reports & Exports — ⏳ NEXT
-Planned Components
-8.1 PDF Report Generator
+# For the data pipeline (optional for demo-only mode)
+Google Earth Engine account (free for research)
 
-Tool: WeasyPrint (HTML → PDF)
-Templates: reports/templates/*.html with Jinja2
-Sections: Exec summary, city map, ward rankings, top interventions, methodology, limitations
-Length: 4-8 pages, print-ready
-Bilingual: English + Marathi (per FR-63) — optional
-8.2 Additional Data Exports
+git clone https://github.com/your-org/chhaon.git
+cd chhaon
 
-Full GeoJSON per layer
-Scenario JSON with all edits + results
-CSV enhancements (add SHAP contributions)
-8.3 Scenario Comparison Feature
-
-Save 2-4 scenarios
-Side-by-side ΔT + cost view
-Diff map visualization
-8.4 Advanced Frontend Features
-
-Multi-cell paint (drag to select)
-Save scenario with shareable URL
-AOI upload
-8.5 API Enhancements
-
-POST /scenario/compare
-POST /report/generate (async job)
-GET /report/{job_id} (poll for PDF)
-GET /export/{city}?format=geojson|csv|geotiff
-16. PHASE 9: Deployment — ⏳ FUTURE
-9.1 Docker Compose
-
-Services: api, web, db, cache, worker
-Nginx reverse proxy with Caddy TLS
-9.2 Demo Cache Baker
-
-scripts/bake_demo_cache.py
-Pre-computes all tiles, ward tables, scenarios
-Feature flag disables GEE during demos
-9.3 Production Deploy
-
-VPS: Hetzner/DigitalOcean 4vCPU/16GB
-Automatic backups
-Basic monitoring
-Cost target: < ₹5,000/month
-17. Complete File Inventory
-text
-
-/home/krrish-soni/chhaon/
-│
-├── .env                                          ✅
-├── .gitignore                                    ✅
-├── Makefile                                      ✅
-├── README.md                                     ✅
-├── requirements.txt                              ✅
-├── pyproject.toml                                ✅
-│
-├── config/
-│   ├── __init__.py                               ✅
-│   ├── cities.yaml                               ✅ 4 Maharashtra cities
-│   └── loader.py                                 ✅
-│
-├── pipeline/
-│   ├── __init__.py                               ✅
-│   ├── ingest/
-│   │   ├── __init__.py                           ✅
-│   │   ├── boundaries.py                         ✅ OSM download + 1km grid
-│   │   ├── load_to_db.py                         ✅ Load grid to PostGIS
-│   │   ├── modis_lst.py                          ✅ Batch NASA MODIS
-│   │   └── landcover.py                          ✅ Batch ESA WorldCover
-│   ├── preprocess/
-│   │   ├── __init__.py                           ✅
-│   │   ├── merge_data.py                         ✅ Join temp + landcover
-│   │   ├── sprawl_forecast.py                    ✅ 2031/2041 ML projections
-│   │   └── weather_normalize.py                  ✅ Phase 6 proxy
-│   ├── features/
-│   │   └── __init__.py                           ✅ (empty)
-│   └── targets/
-│       ├── __init__.py                           ✅
-│       ├── rural_reference.py                    ✅ Countryside baseline
-│       └── compute_suhii.py                      ✅ Heat anomaly
-│
-├── models/
-│   ├── __init__.py                               ✅
-│   ├── baselines/
-│   │   ├── __init__.py                           ✅
-│   │   └── ols_regression.py                     ✅ M1 baseline
-│   ├── gbm/
-│   │   ├── __init__.py                           ✅
-│   │   ├── train.py                              ⚠️ DEPRECATED (Phase 6)
-│   │   ├── train_blocked.py                      ✅ Phase 6 replacement
-│   │   └── train_quantile.py                     ✅ Phase 6 uncertainty
-│   ├── explain/
-│   │   ├── __init__.py                           ✅
-│   │   └── shap_explainer.py                     ✅
-│   ├── transfer_function/
-│   │   ├── __init__.py                           ✅
-│   │   └── scenario_engine.py                    ✅ v3 with uncertainty + domain guard
-│   ├── cv/
-│   │   ├── __init__.py                           ✅ Phase 6
-│   │   ├── blocked_split.py                      ✅ Phase 6
-│   │   └── domain_guard.py                       ✅ Phase 6
-│   ├── deep/                                     ❌ (empty — G38)
-│   ├── lulc_change/                              ❌ (empty — G6)
-│   └── registry/
-│       ├── lightgbm_suhii_night.txt              ✅ Original M2
-│       ├── lightgbm_suhii_night_p10.txt          ✅ Phase 6 P10
-│       ├── lightgbm_suhii_night_p50.txt          ✅ Phase 6 P50
-│       ├── lightgbm_suhii_night_p90.txt          ✅ Phase 6 P90
-│       ├── CARD.json                             ✅ Updated Phase 6
-│       └── CARD_quantiles.json                   ✅ Phase 6
-│
-├── api/
-│   ├── __init__.py                               ✅
-│   ├── main.py                                   ✅ FastAPI app
-│   ├── schemas/
-│   │   ├── __init__.py                           ✅
-│   │   ├── heat.py                               ✅
-│   │   └── scenario.py                           ✅ v2 with UncertaintyBand + warnings
-│   ├── services/
-│   │   ├── __init__.py                           ✅
-│   │   ├── spatial_service.py                    ✅
-│   │   └── heat_service.py                       ✅
-│   └── routers/
-│       ├── __init__.py                           ✅
-│       ├── cities.py                             ✅
-│       ├── layers.py                             ✅
-│       ├── cells.py                              ✅
-│       └── scenarios.py                          ✅
-│
-├── web/                                          ✅ Next.js 14 (Phase 5 + 7)
-│   ├── package.json                              ✅
-│   ├── tsconfig.json                             ✅
-│   ├── tailwind.config.ts                        ✅
-│   ├── postcss.config.js                         ✅
-│   ├── .env.local                                ✅
-│   ├── node_modules/                             ✅
-│   └── src/
-│       ├── app/
-│       │   ├── layout.tsx                        ✅
-│       │   ├── page.tsx                          ✅ v3 with dynamic import + layout fix
-│       │   └── globals.css                       ✅
-│       ├── components/
-│       │   ├── map/
-│       │   │   ├── HeatMap.tsx                   ✅ v3 with 3 basemaps + property coercion
-│       │   │   ├── MapControls.tsx               ✅ v2 with basemap selector + opacity
-│       │   │   └── TimeMachine.tsx               ✅ Phase 7
-│       │   ├── panels/
-│       │   │   ├── CellDetailPanel.tsx           ✅ v3 with tabs + AI Diagnosis + num() fix
-│       │   │   ├── RankingTable.tsx              ✅ v2 with filters + CSV export
-│       │   │   ├── CityStatsBar.tsx              ✅ Phase 7
-│       │   │   └── SearchAndInfo.tsx             ✅ Phase 7 search + Model Card modal
-│       │   └── scenario/
-│       │       └── ScenarioPainter.tsx           ✅ v2 with AI trace + uncertainty
-│       └── lib/
-│           ├── types.ts                          ✅ v2 with BasemapStyle + UncertaintyBand
-│           └── api.ts                            ✅ v2 with evaluateScenario + fetchCellExplanation
-│
-├── scripts/
-│   ├── __init__.py                               ✅
-│   └── generate_heatmap.py                       ✅
-│
-├── reports/                                      ⏳ EMPTY (Phase 8)
-│   └── templates/
-│
-├── tests/                                        ⏳ EMPTY (Phase 8)
-│   ├── unit/
-│   ├── integration/
-│   └── e2e/
-│
-├── docs/                                         ✅ Phase 6
-│   ├── 01-problem-statement-explained.md         ✅
-│   ├── 02-PRD.md                                 ✅
-│   ├── 03-TRD.md                                 ✅
-│   ├── VALIDATION.md                             ✅ Phase 6
-│   └── LIMITATIONS.md                            ✅ Phase 6
-│
-└── data/                                         ✅ (git-ignored)
-    ├── boundaries/
-    │   ├── nagpur_boundary.geojson               ✅
-    │   └── nagpur_grid.geojson                   ✅
-    ├── tables/
-    │   ├── nagpur_monthly_lst.csv                ✅
-    │   ├── nagpur_cell_lst_2024_05.parquet       ✅
-    │   ├── nagpur_landcover_2021.parquet         ✅
-    │   ├── nagpur_master_2024.parquet            ✅
-    │   ├── nagpur_rural_reference.parquet        ✅
-    │   ├── nagpur_suhii_2024.parquet             ✅
-    │   └── nagpur_suhii_weather_normalized.parquet ✅ Phase 6
-    └── demo/
-        ├── nagpur_heatmap.geojson                ✅
-        └── nagpur_forecast_heatmap.geojson       ✅
-18. Environment & Credentials
-System Info
-OS: Ubuntu Linux
-User: krrish-soni
-Home: /home/krrish-soni
-Project Root: /home/krrish-soni/chhaon
-Machine: Dell Inspiron 15 5518
-Credentials & Access
-Service	Value
-PostgreSQL Database	chhaon_db
-PostgreSQL User	chhaon
-PostgreSQL Password	chhaon_dev_2024 (dev only)
-Redis	localhost:6379/0
-Google Cloud Project	chhaon-508513
-GEE Registration	Non-commercial use
-GEE Auth	~/.config/earthengine/credentials
-Software Versions
-Python: 3.11
-Node.js: 20 LTS
-PostgreSQL: 16 + PostGIS 3.4
-Redis: 7
-Next.js: 14.2.35
-FastAPI: 0.115.5
-LightGBM: 4.5.0
-MapLibre GL JS: 4.7.1
-SHAP: 0.46.0
-19. How to Run Everything
-Backend (Terminal 1)
-Bash
-
-cd ~/chhaon
+# Backend
+python -m venv .venv
 source .venv/bin/activate
-export PYTHONPATH=$PWD
+pip install -r requirements.txt
 
-# Full pipeline (only run once, or when data changes)
+# Frontend
+cd web
+npm install
+cd ..
+
+# Terminal 1 — Backend
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Frontend
+cd web && npm run dev
+
+# Step 1 — Authenticate with Google Earth Engine
+# (one-time, saves credentials locally)
+python -c "import ee; ee.Authenticate()"
+
+# Step 2 — Run pipeline in order (Nagpur)
 python -m pipeline.ingest.boundaries
-python -m pipeline.ingest.load_to_db
 python -m pipeline.ingest.modis_lst
-python -m pipeline.ingest.landcover
-python -m pipeline.preprocess.merge_data
 python -m pipeline.targets.rural_reference
 python -m pipeline.targets.compute_suhii
-python -m scripts.generate_heatmap
+python -m pipeline.ingest.landcover
+python -m pipeline.ingest.sentinel2_indices
+python -m pipeline.ingest.ghsl_viirs
+python -m pipeline.ingest.era5_weather
+python -m pipeline.preprocess.weather_normalize
+python -m pipeline.preprocess.build_feature_matrix
 
-# ML training with blocked CV (Phase 6)
-python -m models.baselines.ols_regression
+# Step 3 — Run Pune (all-in-one)
+python -m pipeline.ingest.ingest_pune
+
+# Step 4 — Build web GeoJSONs
+python -m scripts.build_heatmaps
+
+# Step 5 — Validate models
 python -m models.gbm.train_blocked
 python -m models.gbm.train_quantile
+python -m models.cv.city_block_cv
+python -m scripts.validate_counterfactual
 
-# Weather normalization proxy (Phase 6)
-python -m pipeline.preprocess.weather_normalize
+# URL of the FastAPI backend
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
-# ML sprawl forecast
-python -m pipeline.preprocess.sprawl_forecast
+# Backend (from repo root)
+source .venv/bin/activate
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Test full pipeline
-python -m models.transfer_function.scenario_engine
-python -m models.cv.domain_guard
-
-# Start API server (always keep running)
-uvicorn api.main:app --reload --port 8000
-Frontend (Terminal 2)
-Bash
-
-cd ~/chhaon/web
+# Frontend (from web/)
 npm run dev
-Access
-Web App: http://localhost:3000
-API Docs: http://localhost:8000/docs
-API Health: http://localhost:8000/health
-20. Critical Context for AI Handoff
-User Context
-Name: krrish-soni
-OS: Ubuntu, uses nano editor
-Level: Intermediate — knows Python well, learning geospatial + ML concepts
-Focus: Building working prototype for Maharashtra cities (Nagpur primary)
-Preferences:
-Real satellite data ONLY (never mock)
-Detailed step-by-step instructions with nano commands
-Explanation of what every command does
-Complete code (no # ... unchanged placeholders) ⭐ CRITICAL
-Full file replacements when editing
-Delivery Format User Expects
-Each phase should be structured as:
 
-4 Sets of related work
-Each Set has at least 3 Steps
-Each Step includes:
-nano filename command
-Full code to paste (complete, no placeholders)
-Explanation of what each section does
-Save & exit: Ctrl + O → Enter → Ctrl + X
-Command to run + expected output
-Non-Negotiable Rules (Repeat)
-NEVER use mock data
-NEVER use random k-fold CV
-NEVER predict raw LST (always SUHII anomaly)
-NEVER remove monotone constraints (except for quantile models which don't support them)
-NEVER call GEE live during demos
-ALWAYS include units (°C, ₹, %, km)
-ALWAYS include limitations
-ALWAYS explain "so what" for numbers
-ALWAYS give complete code files, not diffs
-ALWAYS use dynamic() import with ssr: false for MapLibre components
-Common Errors Encountered (and Fixed)
-Error	Root Cause	Fix
-ModuleNotFoundError: No module named 'config'	Running as script instead of module	Use python -m pipeline.ingest.modis_lst
-ModuleNotFoundError: 'psycopg2'	Missing binary driver	pip install psycopg2-binary
-EEException: Project not found	Cloud project not registered	Register at code.earthengine.google.com
-'ImageCollection' object has no attribute 'multiply'	Called .multiply() before .median()	Order MUST be .median().multiply()
-'MultiPolygon' object has no attribute 'exterior'	Grid clipping created MultiPolygons	Use shapely.geometry.mapping()
-Timeout on per-cell requests	Individual GEE requests	Use reduceRegions() for batch
-Cannot use monotone_constraints in quantile objective	LightGBM limitation	Omit monotone for quantile models
-Module not found: '@/components/...'	Missing file	Create the file
-CARTO "API KEY REQUIRED" watermark	CARTO changed policy	Use Esri Dark Canvas or OSM/Satellite
-"Map Data Not Available" on zoom	Missing maxzoom: 16 config	Add maxzoom: 16 to raster source
-TypeError: Cannot read properties of undefined (reading 'toFixed')	MapLibre returns properties as strings	Coerce with num() / parseFloat()
-RangeError: Maximum call stack size exceeded	Next.js SSR of MapLibre	Use dynamic(..., { ssr: false })
-Overlapping UI panels	Multiple components using absolute positioning	Parent page.tsx owns all positioning
-10 Model Gaps (Priority Order for Future)
-Most critical to fix first:
+# Build and run everything
+docker compose up --build
 
-G1: Multi-year data — foundational for everything else
-G6: Cellular automaton sprawl model — better forecasts
-G7: 1km→100m downscaling — parcel-level decisions
-G8: Historical counterfactual validation — proves scenario engine works
-G2: Multi-city training — city-block CV becomes possible
-Frontend Features to Consider Improving
-G12: Scenario comparison (2-4 side-by-side) — high value for planners
-G13: Multi-cell paint (drag to select) — better UX
-G14: Save scenario with shareable URL — collaboration
-G17: AOI upload — enables custom AOIs beyond pilot cities
-G27: Bilingual Marathi support — accessibility for Maharashtra users
-Next Immediate Task Options
-Option A: Phase 8 — Reports & Exports (Recommended)
+# API available at :8000
+# Frontend available at :3000
 
-WeasyPrint PDF generator
-Scenario comparison
-Save scenarios with URL
-AOI upload
-Estimated: 4-6 hours
-Option B: Fix Data Gaps (Phase 6.5)
+# Check API health
+curl http://localhost:8000/health
 
-Extract multi-year MODIS
-Add Pune data
-Retrain with city-block CV
-Estimated: 6-8 hours
-Option C: Phase 9 — Deployment
+# Check cities endpoint
+curl http://localhost:8000/api/v1/cities
 
-Docker Compose
-Demo cache baker
-Production deploy
-Estimated: 3-4 hours
-Overall Project Progress
-text
+# Check Nagpur heatmap loads
+curl http://localhost:8000/api/v1/layers/nagpur | python3 -m json.tool | head -30
 
-Phase 1: Foundation                    ████████████████████  100%  ✅
-Phase 2: Satellite Data Pipeline       ████████████████████  100%  ✅
-Phase 3: ML Model & Scenario Engine    ████████████████████  100%  ✅
-Phase 4: Backend API (FastAPI)         ████████████████████  100%  ✅
-Phase 5: Initial Frontend              ████████████████████  100%  ✅
-Phase 6: Model Credibility Fixes       ████████████████████  100%  ✅
-Phase 7: Advanced Interactive Frontend ████████████████████  100%  ✅
-Phase 8: Reports & Exports             ░░░░░░░░░░░░░░░░░░░░    0%  ⏳
-Phase 9: Deployment & Demo Cache       ░░░░░░░░░░░░░░░░░░░░    0%  ⏳
+# Interactive API docs
+open http://localhost:8000/docs
 
-TOTAL PROJECT COMPLETION:              ██████████████████░░   92%
+
+What LST is (and isn't)
+
+    Land Surface Temperature (LST) measures radiative surface skin
+    temperature and is typically 3–12°C higher than ambient 2m air
+    temperature during the day. Nocturnal LST is a validated proxy for
+    nocturnal thermal recovery. This tool is decision-support only and
+    does not constitute a statutory environmental assessment.
