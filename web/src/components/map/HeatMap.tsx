@@ -231,10 +231,6 @@ export function HeatMap({
       className: "chhaon-popup",
     });
 
-    map.off("mousemove", "chhaon-heat-fill");
-    map.off("mouseleave", "chhaon-heat-fill");
-    map.off("click", "chhaon-heat-fill");
-
     map.on("mousemove", "chhaon-heat-fill", (e) => {
       map.getCanvas().style.cursor = "pointer";
 
