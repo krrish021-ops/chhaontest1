@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Flame, Cpu, Sliders } from "lucide-react";
+import { X, Cpu, Sliders, AlertTriangle } from "lucide-react";
 import { fetchCellExplanation, fetchCellRankings } from "@/lib/api";
 import { CellExplanation, CellSummary } from "@/lib/types";
 import { ScenarioComparison } from "@/components/scenario/ScenarioComparison";
@@ -13,34 +13,54 @@ interface CellDetailPanelProps {
   onOpenPainter: () => void;
 }
 
-// Human-readable labels for raw feature keys (presentation only —
-// the underlying values are real, this just relabels them nicely).
 const FEATURE_LABELS: Record<string, string> = {
   frac_built: "Impervious Built Surface",
-  frac_tree: "Tree Canopy Coverage",
+  frac_tree:  "Tree Canopy Coverage",
   frac_water: "Water Body Coverage",
-  frac_crop: "Farmland / Cropland",
+  frac_crop:  "Farmland / Cropland",
   frac_grass: "Open Grass / Parkland",
 };
 
-export function CellDetailPanel({ cellId, cityId, onClose, onOpenPainter }: CellDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<"current" | "ai" | "compare">("current");
+// Safe formatters — never crash on null/undefined
+const fmt1 = (v: number | null | undefined) =>
+  v != null ? `${v.toFixed(1)}°C` : "—";
+
+const fmt2signed = (v: number | null | undefined) =>
+  v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}°C` : "—";
+
+const fmtPct = (v: number | null | undefined) =>
+  v != null ? `${(v * 100).toFixed(0)}%` : "—";
+
+export function CellDetailPanel({
+  cellId,
+  cityId,
+  onClose,
+  onOpenPainter,
+}: CellDetailPanelProps) {
+  const [activeTab, setActiveTab]     = useState<"current" | "ai" | "compare">("current");
   const [explanation, setExplanation] = useState<CellExplanation | null>(null);
-  const [cellStats, setCellStats] = useState<CellSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [cellStats, setCellStats]     = useState<CellSummary | null>(null);
+  const [loading, setLoading]         = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [shapError, setShapError]     = useState<string | null>(null);
 
   useEffect(() => {
     if (!cellId) return;
 
     async function loadExplain() {
       setLoading(true);
+      setShapError(null);
       try {
         const data = await fetchCellExplanation(cellId);
         setExplanation(data);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load explanation:", err);
         setExplanation(null);
+        setShapError(
+          err?.message?.includes("503") || err?.message?.includes("unavailable")
+            ? "SHAP data requires the Parquet feature tables (run the GEE pipeline first)."
+            : "Attribution data unavailable for this cell."
+        );
       } finally {
         setLoading(false);
       }
@@ -49,10 +69,10 @@ export function CellDetailPanel({ cellId, cityId, onClose, onOpenPainter }: Cell
     async function loadStats() {
       setStatsLoading(true);
       try {
-        // Fetch a large slice so we can find this specific cell
-        // regardless of its rank (city grids are small: 229-414 cells).
         const all = await fetchCellRankings(cityId, "suhii_night", 500);
-        const match = all.find((c) => c.cell_id.toUpperCase() === cellId.toUpperCase());
+        const match = all.find(
+          (c: any) => c.cell_id.toUpperCase() === cellId.toUpperCase()
+        );
         setCellStats(match ?? null);
       } catch (err) {
         console.error("Failed to load cell stats:", err);
@@ -89,7 +109,7 @@ export function CellDetailPanel({ cellId, cityId, onClose, onOpenPainter }: Cell
       <div className="flex space-x-1 border-b border-slate-800 pb-2 mb-3">
         {[
           { id: "current", label: "Overview" },
-          { id: "ai", label: "AI Diagnosis" },
+          { id: "ai",      label: "SHAP Drivers" },
           { id: "compare", label: "Comparator" },
         ].map((t) => (
           <button
@@ -106,80 +126,126 @@ export function CellDetailPanel({ cellId, cityId, onClose, onOpenPainter }: Cell
         ))}
       </div>
 
-      {/* Tab 1: Current Overview */}
+      {/* Tab 1: Overview */}
       {activeTab === "current" && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
+
+            {/* Night SUHII */}
             <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
-              <div className="text-[10px] text-slate-400 font-semibold">Night SUHII Anomaly</div>
+              <div className="text-[10px] text-slate-400 font-semibold">Night SUHII</div>
               <div className="text-base font-bold text-orange-400 mt-0.5">
                 {loading
                   ? "…"
                   : explanation
-                  ? `+${explanation.night_suhii_degC.toFixed(2)}°C`
-                  : "N/A"}
+                  ? fmt2signed(explanation.night_suhii_degC)
+                  : statsLoading
+                  ? "…"
+                  : fmt2signed(cellStats?.suhii_night)}
               </div>
               <div className="text-[9px] text-slate-500">Above Rural Baseline</div>
             </div>
+
+            {/* Day LST */}
             <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
               <div className="text-[10px] text-slate-400 font-semibold">Day Surface Temp</div>
               <div className="text-base font-bold text-slate-200 mt-0.5">
-                {statsLoading
-                  ? "…"
-                  : cellStats
-                  ? `${cellStats.lst_day.toFixed(1)}°C`
-                  : "N/A"}
+                {statsLoading ? "…" : fmt1(cellStats?.lst_day)}
               </div>
               <div className="text-[9px] text-slate-500">MODIS Terra Peak</div>
             </div>
           </div>
 
+          {/* Day SUHII + Night LST */}
           {cellStats && (
             <div className="grid grid-cols-2 gap-2">
               <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
                 <div className="text-[10px] text-slate-400 font-semibold">Day SUHII</div>
                 <div className="text-sm font-bold text-slate-200 mt-0.5">
-                  {cellStats.suhii_day >= 0 ? "+" : ""}
-                  {cellStats.suhii_day.toFixed(2)}°C
+                  {fmt2signed(cellStats.suhii_day)}
                 </div>
               </div>
               <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
                 <div className="text-[10px] text-slate-400 font-semibold">Night LST</div>
                 <div className="text-sm font-bold text-slate-200 mt-0.5">
-                  {cellStats.lst_night.toFixed(1)}°C
+                  {fmt1(cellStats.lst_night)}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Action Trigger */}
+          {/* Land cover fractions */}
+          {cellStats && (
+            <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60 space-y-1">
+              <div className="text-[10px] font-semibold text-slate-400 mb-1">
+                Land Cover (ESA WorldCover 2021)
+              </div>
+              {[
+                { label: "Built-up",  val: cellStats.frac_built, color: "text-red-400" },
+                { label: "Tree",      val: cellStats.frac_tree,  color: "text-green-400" },
+                { label: "Water",     val: cellStats.frac_water, color: "text-blue-400" },
+                { label: "Crop",      val: cellStats.frac_crop,  color: "text-yellow-400" },
+                { label: "Grass",     val: cellStats.frac_grass, color: "text-emerald-400" },
+              ].map((item) => (
+                <div key={item.label} className="flex justify-between items-center">
+                  <span className="text-slate-400">{item.label}</span>
+                  <span className={`font-semibold ${item.color}`}>
+                    {fmtPct(item.val)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!cellStats && !statsLoading && (
+            <div className="text-slate-500 text-center py-2">
+              Cell data not found in current rankings.
+            </div>
+          )}
+
           <button
             onClick={onOpenPainter}
             className="w-full py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs shadow-md transition flex items-center justify-center space-x-1.5"
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>Open Scenario Painter Studio</span>
+            <span>Open Scenario Simulator</span>
           </button>
         </div>
       )}
 
-      {/* Tab 2: AI Diagnosis (SHAP) */}
+      {/* Tab 2: SHAP Drivers */}
       {activeTab === "ai" && (
         <div className="space-y-2.5">
           <div className="text-[11px] font-semibold text-slate-300 flex items-center space-x-1">
             <Cpu className="w-3.5 h-3.5 text-purple-400" />
-            <span>SHAP Machine Learning Attribution</span>
+            <span>SHAP Attribution — LightGBM v1 TreeExplainer</span>
+          </div>
+
+          {/* Note about v1 schema */}
+          <div className="text-[10px] text-slate-500 bg-slate-800/40 rounded p-2 border border-slate-700/40">
+            5-feature v1 model (built, tree, water, crop, grass).
+            v2's 19-feature attribution is not yet wired to SHAP.
           </div>
 
           {loading ? (
-            <div className="text-center py-6 text-slate-500">Calculating SHAP drivers...</div>
-          ) : explanation && explanation.drivers && explanation.drivers.length > 0 ? (
+            <div className="text-center py-6 text-slate-500">
+              Computing SHAP drivers...
+            </div>
+          ) : shapError ? (
+            <div className="flex items-start space-x-2 text-[11px] text-amber-400 bg-amber-950/30 p-2.5 rounded-lg border border-amber-800/40">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>{shapError}</span>
+            </div>
+          ) : explanation?.drivers?.length ? (
             <div className="space-y-2">
               {explanation.drivers.map((d, i) => {
                 const isWarming = d.shap_contribution_degC >= 0;
                 const label = FEATURE_LABELS[d.feature] ?? d.feature;
                 return (
-                  <div key={i} className="p-2 rounded bg-slate-800/60 border border-slate-700/50">
+                  <div
+                    key={i}
+                    className="p-2 rounded bg-slate-800/60 border border-slate-700/50"
+                  >
                     <div className="flex justify-between items-center text-[11px]">
                       <span className="font-semibold text-slate-200">{label}</span>
                       <strong className={isWarming ? "text-red-400" : "text-green-400"}>
@@ -193,7 +259,9 @@ export function CellDetailPanel({ cellId, cityId, onClose, onOpenPainter }: Cell
               })}
             </div>
           ) : (
-            <div className="text-slate-400">Attribution data unavailable for this cell.</div>
+            <div className="text-slate-400 text-center py-4">
+              No attribution data available for this cell.
+            </div>
           )}
         </div>
       )}
