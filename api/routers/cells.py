@@ -40,3 +40,5 @@ async def explain_cell_endpoint(cell_id: str):
         return get_cell_explanation_service(cell_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))

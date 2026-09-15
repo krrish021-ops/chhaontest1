@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Sliders, ArrowRight, ShieldCheck, DollarSign, ThermometerSnowflake, Loader2 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 interface ScenarioComparisonProps {
   cellId: string;
@@ -15,16 +16,16 @@ export const ScenarioComparison: React.FC<ScenarioComparisonProps> = ({ cellId, 
   const runComparison = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/scenario/compare", {
+      const res = await fetch(`${API_BASE}/api/v1/scenario/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           city_id: cityId,
           cell_id: cellId,
           scenarios: [
-            { name: "Option A (Tree Canopy +20%)", action: "add_trees", area_pct: 20 },
-            { name: "Option B (Cool Roofs 50%)", action: "add_trees", area_pct: 35 },
-            { name: "Option C (Water Reservoir)", action: "restore_water", area_pct: 15 },
+            { name: "Option A: Tree Canopy (+20%)", action: "add_trees", area_pct: 20 },
+            { name: "Option B: Water Body (+15%)", action: "restore_water", area_pct: 15 },
+            { name: "Option C: Densification (+25%)", action: "add_concrete", area_pct: 25 },
           ],
         }),
       });
@@ -81,4 +82,3 @@ export const ScenarioComparison: React.FC<ScenarioComparisonProps> = ({ cellId, 
     </div>
   );
 };
-

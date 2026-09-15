@@ -17,6 +17,13 @@ class CityInfo(BaseModel):
     buffer_km: int = Field(..., example=20)
     priority: int = Field(..., example=1)
     notes: str = Field(..., example="Hottest city in Maharashtra.")
+    lat: float = Field(..., example=21.15, description="Bbox centroid latitude, for map centering")
+    lon: float = Field(..., example=79.07, description="Bbox centroid longitude, for map centering")
+    zoom: int = Field(11, example=11, description="Suggested map zoom level")
+    data_available: bool = Field(
+        ..., example=True,
+        description="True only if this city has real ingested heatmap/boundary data on disk today"
+    )
 
 
 class DriverContribution(BaseModel):

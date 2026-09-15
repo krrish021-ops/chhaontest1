@@ -1,6 +1,6 @@
 import { CityInfo, CellSummary, CellExplanation, ScenarioRequest, ScenarioResponse } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export async function fetchCities(): Promise<CityInfo[]> {
   const res = await fetch(`${API_BASE}/api/v1/cities`);
@@ -23,8 +23,14 @@ export async function fetchHeatmapGeoJSON(cityId: string = "nagpur") {
 // Alias for backwards compatibility
 export const fetchHeatmap = fetchHeatmapGeoJSON;
 
-export async function fetchCellRankings(cityId: string = "nagpur", sortBy: string = "suhii_night"): Promise<CellSummary[]> {
-  const res = await fetch(`${API_BASE}/api/v1/cells/${cityId}?sort_by=${sortBy}&ascending=false`);
+export async function fetchCellRankings(
+  cityId: string = "nagpur",
+  sortBy: string = "suhii_night",
+  limit: number = 50
+): Promise<CellSummary[]> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/cells/${cityId}?sort_by=${sortBy}&limit=${limit}&ascending=false`
+  );
   if (!res.ok) throw new Error(`Failed to fetch rankings for ${cityId}`);
   return res.json();
 }

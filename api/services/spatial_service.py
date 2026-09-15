@@ -5,29 +5,12 @@ import json
 import math
 import pandas as pd
 
+from config.loader import get_all_cities
+
 DEMO_DIR = Path("data/demo")
 BOUNDS_DIR = Path("data/boundaries")
 
-CITIES_REGISTRY = [
-    {
-        "id": "nagpur",
-        "name": "Nagpur",
-        "state": "Maharashtra",
-        "lat": 21.1458,
-        "lon": 79.0888,
-        "zoom": 11,
-        "description": "Pilot city — Vidarbha region peak heat hotspot",
-    },
-    {
-        "id": "pune",
-        "name": "Pune",
-        "state": "Maharashtra",
-        "lat": 18.5204,
-        "lon": 73.8567,
-        "zoom": 11,
-        "description": "Rapidly sprawling IT & manufacturing hub",
-    },
-]
+DEFAULT_ZOOM = 11
 
 
 def safe_float(val, default=0.0):
@@ -46,8 +29,56 @@ def safe_float(val, default=0.0):
         return default
 
 
+def _data_available(city_id: str) -> bool:
+    """
+    Honest check: does this city actually have servable demo/boundary
+    data on disk right now? Used so cities listed in config/cities.yaml
+    but not yet ingested (e.g. Mumbai, Aurangabad) are truthfully
+    flagged rather than silently presented as ready.
+    """
+    candidates = [
+        DEMO_DIR / f"{city_id}_heatmap_normalized.geojson",
+        DEMO_DIR / f"{city_id}_forecast_heatmap.geojson",
+        DEMO_DIR / f"{city_id}_heatmap.geojson",
+        BOUNDS_DIR / f"{city_id}_grid.geojson",
+    ]
+    return any(p.exists() for p in candidates)
+
+
 def list_cities_service():
-    return CITIES_REGISTRY
+    """
+    Real city registry, sourced from config/cities.yaml (single source
+    of truth) instead of a hardcoded duplicate list. Every city defined
+    in the YAML is returned, honestly flagged with data_available.
+    """
+    cities_cfg = get_all_cities()
+    result = []
+
+    for city_id, cfg in cities_cfg.items():
+        bbox = cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
+        if len(bbox) == 4:
+            lon = round((bbox[0] + bbox[2]) / 2, 4)
+            lat = round((bbox[1] + bbox[3]) / 2, 4)
+        else:
+            lon, lat = 0.0, 0.0
+
+        result.append({
+            "id": city_id,
+            "name": cfg.get("name", city_id.title()),
+            "name_mr": cfg.get("name_mr", ""),
+            "state": cfg.get("state", ""),
+            "bbox": bbox,
+            "buffer_km": cfg.get("buffer_km", 20),
+            "priority": cfg.get("priority", 99),
+            "notes": cfg.get("notes", ""),
+            "lat": lat,
+            "lon": lon,
+            "zoom": DEFAULT_ZOOM,
+            "data_available": _data_available(city_id),
+        })
+
+    result.sort(key=lambda c: c["priority"])
+    return result
 
 
 def get_city_aoi_service(city_id="nagpur"):

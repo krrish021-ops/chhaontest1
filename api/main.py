@@ -3,12 +3,18 @@ Chhaon (छांव) — FastAPI Backend Service.
 Entry point for REST APIs, ML inference, scenario painter, and report generator.
 """
 
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 
 from api.routers import cities, layers, cells, scenarios, reports
+
+# Load environment variables from .env at repo root
+load_dotenv()
 
 app = FastAPI(
     title="Chhaon (छांव) API",
@@ -16,11 +22,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS configuration for Next.js frontend
+# CORS configuration for the frontend.
+# Reads a comma-separated list from the CORS_ORIGINS env var (see .env).
+# Falls back to local dev origins if the env var is not set, so nothing
+# breaks for anyone running this without a configured .env yet.
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000"
 origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", _default_origins).split(",")
+    if origin.strip()
 ]
 
 app.add_middleware(
@@ -51,6 +61,7 @@ def root():
         "version": "1.0.0",
         "status": "online",
         "docs": "/docs",
+        "cors_origins": origins,
     }
 
 

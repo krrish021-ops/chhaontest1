@@ -16,6 +16,9 @@ import { SearchAndInfo } from "@/components/panels/SearchAndInfo";
 import { ScenarioPainter } from "@/components/scenario/ScenarioPainter";
 import { ReportModal } from "@/components/panels/ReportModal";
 
+// API base URL — reads from env, falls back to localhost for local dev only
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
 // Load HeatMap strictly on client side (SSR safety)
 const HeatMap = dynamic(() => import("@/components/map/HeatMap"), {
   ssr: false,
@@ -112,7 +115,7 @@ export default function DashboardPage() {
 
           {/* Export GeoJSON Button */}
           <a
-            href={`http://localhost:8000/api/v1/export/${cityId}?format=geojson`}
+            href={`${API_BASE}/api/v1/export/${cityId}?format=geojson`}
             download
             className="flex items-center space-x-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition"
           >

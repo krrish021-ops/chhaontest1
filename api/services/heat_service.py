@@ -5,6 +5,8 @@ import json
 import math
 import pandas as pd
 
+from models.explain import shap_explainer as _shap
+
 TABLES_DIR = Path("data/tables")
 DEMO_DIR = Path("data/demo")
 BOUNDS_DIR = Path("data/boundaries")
@@ -125,61 +127,20 @@ get_cell_rankings_service = get_ranked_cells_service
 
 
 def get_cell_explanation_service(cell_id: str) -> dict:
-    """Returns SHAP-style driver explanation for a cell. Raises KeyError if not found."""
-    cell = str(cell_id).upper()
-    props = None
+    """
+    Returns a REAL SHAP-based driver explanation for a cell, computed by
+    models.explain.shap_explainer (LightGBM v1 TreeExplainer).
 
-    for city in ["nagpur", "pune"]:
-        recs = _records_from_geojson(city)
-        for r in recs:
-            if str(r["cell_id"]).upper() == cell:
-                props = r
-                break
-        if props:
-            break
-
-    if props is None:
-        raise KeyError(f"Cell '{cell_id}' not found in any city dataset.")
-
-    suhii_val = safe_float(props.get("suhii_night"), 0.0)
-    frac_built_val = safe_float(props.get("frac_built"), 0.0)
-    frac_tree_val = safe_float(props.get("frac_tree"), 0.0)
-    height_val = 6.2  # static placeholder pending per-cell GHSL join
-
-    built_contrib = round(frac_built_val * 2.4, 2)
-    tree_contrib = round(frac_tree_val * -2.2, 2)
-    height_contrib = round((height_val / 15.0) * 1.1, 2)
-
-    return {
-        "cell_id": cell,
-        "night_suhii_degC": round(suhii_val, 2),
-        "drivers": [
-            {
-                "feature": "Impervious Built Surface (Concrete)",
-                "value": round(frac_built_val, 2),
-                "shap_contribution_degC": built_contrib,
-                "text": (
-                    f"{int(frac_built_val * 100)}% sealed surface adds "
-                    f"{built_contrib:+.2f}°C — traps daytime radiation, releases slowly at night."
-                ),
-            },
-            {
-                "feature": "Street Canyon Height (Building Morphology)",
-                "value": height_val,
-                "shap_contribution_degC": height_contrib,
-                "text": (
-                    f"{height_val:.1f}m mean building height adds "
-                    f"{height_contrib:+.2f}°C — restricts nocturnal radiative cooling."
-                ),
-            },
-            {
-                "feature": "Urban Tree Canopy Coverage",
-                "value": round(frac_tree_val, 2),
-                "shap_contribution_degC": tree_contrib,
-                "text": (
-                    f"{int(frac_tree_val * 100)}% canopy contributes "
-                    f"{tree_contrib:+.2f}°C — evapotranspiration cooling effect."
-                ),
-            },
-        ],
-    }
+    Raises KeyError if the cell is not found in any supported city dataset.
+    Raises RuntimeError if required model/data files are missing
+    (e.g. on a fresh clone without GEE-derived parquet tables) — the
+    caller must NOT fall back to fabricated numbers on this error.
+    """
+    try:
+        result = _shap.explain_cell(cell_id)
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"SHAP explanation unavailable: required data/model file missing ({e})"
+        )
+    result.pop("_source_city", None)
+    return result

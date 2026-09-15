@@ -33,9 +33,16 @@ async def evaluate_scenario(req: ScenarioRequest):
             cell_id=req.cell_id,
             action=req.action,
             area_pct_change=req.area_pct_change,
+            city_id=req.city_id,
             cost_overrides=req.cost_overrides,
         )
         return ScenarioResponse(**res)
+    except FileNotFoundError as e:
+        # City has no scenario-capable data at all (e.g. Mumbai, Aurangabad)
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        # Cell not found for this city
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -53,5 +60,9 @@ async def evaluate_multi_scenario_comparison(req: CompareScenariosRequest):
             scenarios=scenario_dicts
         )
         return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")

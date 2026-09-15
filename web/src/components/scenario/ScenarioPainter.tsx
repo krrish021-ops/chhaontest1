@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Sliders, CheckCircle2, AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { X, Sliders, CheckCircle2, AlertTriangle, Loader2, Sparkles, Info } from "lucide-react";
 import { evaluateScenario } from "@/lib/api";
 import { ScenarioResponse } from "@/lib/types";
 
@@ -17,10 +17,12 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
   const [loading, setLoading] = useState(false);
   const [aiTrace, setAiTrace] = useState<string[]>([]);
   const [result, setResult] = useState<ScenarioResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleRunSimulation = async () => {
     setLoading(true);
     setResult(null);
+    setErrorMsg(null);
     setAiTrace([
       "Initializing LightGBM M2 Booster...",
       "Applying monotone physics constraints...",
@@ -30,6 +32,7 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
 
     try {
       const res = await evaluateScenario({
+        city_id: cityId,
         cell_id: cellId,
         action: action,
         area_pct_change: coveragePct,
@@ -40,15 +43,20 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
         setResult(res);
         setLoading(false);
       }, 700);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setAiTrace((prev) => [...prev, "❌ Evaluation failed."]);
+      setErrorMsg(
+        err?.message ||
+          "Scenario evaluation failed. This city/cell may not have scenario data available yet."
+      );
       setLoading(false);
     }
   };
 
   return (
     <div className="flex flex-col h-full rounded-xl border border-orange-500/50 bg-slate-900/98 p-4 shadow-2xl backdrop-blur-md text-xs text-slate-200">
-      
+
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
         <div className="flex items-center space-x-2">
@@ -129,6 +137,14 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
         </div>
       )}
 
+      {/* Error state — shown honestly instead of failing silently */}
+      {errorMsg && (
+        <div className="flex items-start space-x-1.5 text-[11px] text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800/50 mb-3">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
       {/* Result Card */}
       {result && (
         <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
@@ -147,8 +163,18 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
           </div>
           <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-800/80">
             <span className="text-slate-400">Indicative Budget:</span>
-            <strong className="text-orange-400">{result.estimated_cost_formatted}</strong>
+            <strong className="text-orange-400">{result.cost_formatted}</strong>
           </div>
+
+          {result.cross_city_model && (
+            <div className="flex items-center space-x-1 text-[10px] text-sky-300 bg-sky-950/40 p-1.5 rounded border border-sky-800/40 mt-1">
+              <Info className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>
+                Model trained on {result.model_source_city} data, applied here cross-city —
+                treat this estimate as lower-confidence.
+              </span>
+            </div>
+          )}
 
           {result.extrapolation_warning && (
             <div className="flex items-center space-x-1 text-[10px] text-amber-400 bg-amber-950/40 p-1.5 rounded border border-amber-800/40 mt-1">
@@ -164,3 +190,4 @@ export function ScenarioPainter({ cellId, cityId, onClose }: ScenarioPainterProp
 }
 
 export default ScenarioPainter;
+
