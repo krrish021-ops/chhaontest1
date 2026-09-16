@@ -17,11 +17,24 @@ class CityInfo(BaseModel):
     buffer_km: int = Field(..., example=20)
     priority: int = Field(..., example=1)
     notes: str = Field(..., example="Hottest city in Maharashtra.")
-    lat: float = Field(..., example=21.15, description="Bbox centroid latitude, for map centering")
-    lon: float = Field(..., example=79.07, description="Bbox centroid longitude, for map centering")
-    zoom: int = Field(11, example=11, description="Suggested map zoom level")
+    lat: float = Field(
+        ...,
+        example=21.15,
+        description="Bbox centroid latitude, for map centering"
+    )
+    lon: float = Field(
+        ...,
+        example=79.07,
+        description="Bbox centroid longitude, for map centering"
+    )
+    zoom: int = Field(
+        11,
+        example=11,
+        description="Suggested map zoom level"
+    )
     data_available: bool = Field(
-        ..., example=True,
+        ...,
+        example=True,
         description="True only if this city has real ingested heatmap/boundary data on disk today"
     )
 
@@ -43,12 +56,17 @@ class CellSummary(BaseModel):
     cell_id: str = Field(..., example="C0187")
     lon: float = Field(..., example=78.95)
     lat: float = Field(..., example=21.12)
-    lst_day: float = Field(..., example=37.8)
-    lst_night: float = Field(..., example=28.4)
-    suhii_day: float = Field(..., example=-2.6)
-    suhii_night: float = Field(..., example=2.0)
+
+    # These heat/LST values can be missing in the dataset.
+    # Optional[float] allows the API to return None safely.
+    lst_day: Optional[float] = Field(None, example=37.8)
+    lst_night: Optional[float] = Field(None, example=28.4)
+    suhii_day: Optional[float] = Field(None, example=-2.6)
+    suhii_night: Optional[float] = Field(None, example=2.0)
+
     heat_level_day: str = Field(..., example="Low ⬜")
     heat_level_night: str = Field(..., example="Moderate 🟨")
-    frac_built: float = Field(..., example=0.52)
-    frac_tree: float = Field(..., example=0.14)
-    frac_water: float = Field(..., example=0.01)
+
+    frac_built: Optional[float] = Field(None, example=0.52)
+    frac_tree: Optional[float] = Field(None, example=0.14)
+    frac_water: Optional[float] = Field(None, example=0.01)
