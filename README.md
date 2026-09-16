@@ -121,7 +121,7 @@ The web app serves pre-computed files — making it fast and cheap to host.
 
 ---
 
-## 5. Project structure
+### 5. Project structure
 chhaon/
 │
 ├── pipeline/ # Data ingestion & processing
