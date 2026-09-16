@@ -121,123 +121,75 @@ The web app serves pre-computed files — making it fast and cheap to host.
 
 ---
 
-### 5. Project structure
 chhaon/
 │
-├── pipeline/ # Data ingestion & processing
-│ ├── ingest/
-│ │ ├── boundaries.py # OSM city boundary + 1km grid (Nagpur)
-│ │ ├── ingest_pune.py # All-in-one Pune pipeline
-│ │ ├── modis_lst.py # NASA MODIS Land Surface Temperature
-│ │ ├── landcover.py # ESA WorldCover land classification
-│ │ ├── sentinel2_indices.py # Sentinel-2 spectral indices (NDVI etc.)
-│ │ ├── ghsl_viirs.py # Building height + night lights
-│ │ └── era5_weather.py # ERA5-Land weather data
-│ ├── targets/
-│ │ ├── rural_reference.py # Rural baseline temperature ring
-│ │ └── compute_suhii.py # SUHII = city - rural baseline
-│ └── preprocess/
-│ ├── weather_normalize.py # Remove weather signal from SUHII
-│ ├── build_feature_matrix.py # Merge all data → training table
-│ └── merge_data.py # Legacy May-2024 master table
+├── api/                         # FastAPI backend
+│   ├── main.py
+│   ├── routers/
+│   │   ├── cities.py
+│   │   ├── layers.py
+│   │   ├── cells.py
+│   │   ├── scenarios.py
+│   │   └── reports.py
+│   ├── services/
+│   │   ├── spatial_service.py
+│   │   └── heat_service.py
+│   └── schemas/
+│       ├── heat.py
+│       └── scenario.py
 │
-├── models/ # ML models
-│ ├── gbm/
-│ │ ├── train_blocked.py # Train v1 model (5 features, spatial CV)
-│ │ └── train_quantile.py # Train P10/P50/P90 uncertainty models
-│ ├── baselines/
-│ │ └── ols_regression.py # Interpretable OLS baseline
-│ ├── cv/
-│ │ ├── blocked_split.py # Spatial block cross-validation
-│ │ ├── city_block_cv.py # Cross-city held-out test
-│ │ └── domain_guard.py # Extrapolation detection
-│ ├── explain/
-│ │ └── shap_explainer.py # SHAP feature attribution
-│ ├── transfer_function/
-│ │ ├── scenario_engine.py # Single-cell intervention simulator
-│ │ └── comparison_engine.py # Multi-scenario comparator
-│ └── registry/ # COMMITTED trained model files
-│ ├── lightgbm_suhii_night.txt # v1 point model
-│ ├── lightgbm_suhii_night_v2.txt # v2 point model (19 features)
-│ ├── lightgbm_suhii_day_v2.txt # v2 day model
-│ ├── lightgbm_suhii_night_p10.txt # Quantile P10
-│ ├── lightgbm_suhii_night_p50.txt # Quantile P50
-│ ├── lightgbm_suhii_night_p90.txt # Quantile P90
-│ ├── CARD.json # v1 model card + metrics
-│ ├── CARD_v2.json # v2 model card + metrics
-│ ├── CARD_quantiles.json # Quantile model card
-│ └── CARD_city_block.json # Cross-city CV results
+├── config/                     # City configuration
+│   ├── cities.yaml
+│   └── loader.py
 │
-├── api/ # FastAPI backend
-│ ├── main.py # App entry point, CORS, health check
-│ ├── routers/
-│ │ ├── cities.py # GET /cities, GET /aoi/{city}
-│ │ ├── layers.py # GET /layers/{city}
-│ │ ├── cells.py # GET /cells/{city}, GET /cell/{id}/explain
-│ │ ├── scenarios.py # POST /scenario/evaluate, /compare
-│ │ └── reports.py # POST /report/generate
-│ ├── services/
-│ │ ├── spatial_service.py # GeoJSON serving + city registry
-│ │ └── heat_service.py # Rankings + SHAP explanations
-│ └── schemas/
-│ ├── heat.py # Pydantic models for city/cell data
-│ └── scenario.py # Pydantic models for scenario I/O
+├── data/                       # Project data
+│   ├── demo/                   # Web-ready GeoJSON files
+│   ├── tables/                 # Parquet datasets
+│   └── boundaries/             # City/grid boundaries
 │
-├── reports/ # PDF generation
-│ ├── generator.py # WeasyPrint PDF compiler
-│ └── templates/
-│ └── thermal_audit.html # Jinja2 HTML template → PDF
+├── docs/                       # Documentation & validation
+│   ├── VALIDATION.md
+│   └── COUNTERFACTUAL_VALIDATION.md
 │
-├── web/ # Next.js 14 frontend
-│ ├── src/
-│ │ ├── app/
-│ │ │ ├── page.tsx # Main dashboard page
-│ │ │ └── layout.tsx # Root layout + fonts
-│ │ ├── components/
-│ │ │ ├── map/
-│ │ │ │ ├── HeatMap.tsx # MapLibre GL choropleth
-│ │ │ │ ├── MapControls.tsx # Layer switcher + opacity
-│ │ │ │ └── TimeMachine.tsx # 4-frame layer animator
-│ │ │ ├── panels/
-│ │ │ │ ├── CityStatsBar.tsx # Header KPIs (live from API)
-│ │ │ │ ├── CellDetailPanel.tsx # Selected cell details + SHAP
-│ │ │ │ ├── RankingTable.tsx # Sortable hotspot table
-│ │ │ │ ├── SearchAndInfo.tsx # Cell search + model card modal
-│ │ │ │ └── ReportModal.tsx # PDF generation trigger
-│ │ │ └── scenario/
-│ │ │ ├── ScenarioPainter.tsx # Single-cell intervention UI
-│ │ │ └── ScenarioComparison.tsx # A/B/C comparison UI
-│ │ └── lib/
-│ │ ├── api.ts # All fetch calls to the backend
-│ │ └── types.ts # TypeScript interfaces
-│ ├── package.json
-│ └── next.config.js
+├── models/                     # Machine learning
+│   ├── gbm/                    # LightGBM training
+│   ├── baselines/              # Baseline models
+│   ├── cv/                     # Cross-validation
+│   ├── explain/                # SHAP explanations
+│   ├── transfer_function/      # Scenario simulation
+│   └── registry/               # Trained models
 │
-├── config/
-│ ├── cities.yaml # City registry (name, bbox, priority)
-│ └── loader.py # YAML config reader
+├── pipeline/                   # Data processing pipeline
+│   ├── ingest/
+│   ├── targets/
+│   └── preprocess/
 │
-├── scripts/
-│ ├── build_heatmaps.py # SAFE: build demo GeoJSONs from parquet
-│ └── rebuild_city_grids.py # ⛔ QUARANTINED — do not run
+├── reports/                    # PDF report generation
+│   ├── generator.py
+│   └── templates/
+│       └── thermal_audit.html
 │
-├── data/
-│ ├── demo/ # COMMITTED web-ready GeoJSONs
-│ │ ├── nagpur_heatmap_normalized.geojson
-│ │ ├── nagpur_forecast_heatmap.geojson
-│ │ ├── pune_heatmap_normalized.geojson
-│ │ └── ...
-│ ├── reports/ # Generated PDF reports
-│ ├── tables/ # GIT-IGNORED Parquet tables (regenerate)
-│ └── boundaries/ # GIT-IGNORED grid + boundary GeoJSONs
+├── scripts/                    # Utility scripts
+│   ├── build_heatmaps.py
+│   └── rebuild_city_grids.py
 │
-├── docs/
-│ ├── VALIDATION.md # Model validation evidence
-│ └── COUNTERFACTUAL_VALIDATION.md
+├── tests/                      # Tests
 │
-├── requirements.txt # Python dependencies
-├── .env # Environment variables (not committed)
-└── README.md # This file
+├── web/                        # Next.js frontend
+│   ├── src/
+│   │   ├── app/
+│   │   ├── components/
+│   │   │   ├── map/
+│   │   │   ├── panels/
+│   │   │   └── scenario/
+│   │   └── lib/
+│   ├── package.json
+│   └── next.config.js
+│
+├── requirements.txt            # Python dependencies
+├── .gitignore
+├── .python-version
+└── README.md
 
 ---
 
