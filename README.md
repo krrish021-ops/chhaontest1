@@ -121,68 +121,9 @@ The web app serves pre-computed files — making it fast and cheap to host.
 
 ---
 
-<<<<<<< HEAD
 ## 5. 📁 Project Structure
 
 ```text
-=======
->>>>>>> 1fe3c8d5c84460de44d4e8abaf5c1f9032d684e3
-chhaon/
-│
-├── api/                         # FastAPI backend
-│   ├── main.py
-│   ├── routers/
-│   │   ├── cities.py
-│   │   ├── layers.py
-│   │   ├── cells.py
-│   │   ├── scenarios.py
-│   │   └── reports.py
-│   ├── services/
-│   │   ├── spatial_service.py
-│   │   └── heat_service.py
-│   └── schemas/
-│       ├── heat.py
-│       └── scenario.py
-│
-├── config/                     # City configuration
-│   ├── cities.yaml
-│   └── loader.py
-│
-<<<<<<< HEAD
-├── data/                       # Data and generated datasets
-│   ├── demo/                   # Web-ready GeoJSON files
-│   ├── tables/                 # Parquet datasets
-│   └── boundaries/             # City boundaries and grids
-│
-├── docs/                       # Documentation
-│   ├── VALIDATION.md
-│   └── COUNTERFACTUAL_VALIDATION.md
-│
-├── models/                     # Machine learning models
-│   ├── gbm/
-│   ├── baselines/
-│   ├── cv/
-│   ├── explain/
-│   ├── transfer_function/
-│   └── registry/
-=======
-├── data/                       # Project data
-│   ├── demo/                   # Web-ready GeoJSON files
-│   ├── tables/                 # Parquet datasets
-│   └── boundaries/             # City/grid boundaries
-│
-├── docs/                       # Documentation & validation
-│   ├── VALIDATION.md
-│   └── COUNTERFACTUAL_VALIDATION.md
-│
-├── models/                     # Machine learning
-│   ├── gbm/                    # LightGBM training
-│   ├── baselines/              # Baseline models
-│   ├── cv/                     # Cross-validation
-│   ├── explain/                # SHAP explanations
-│   ├── transfer_function/      # Scenario simulation
-│   └── registry/               # Trained models
->>>>>>> 1fe3c8d5c84460de44d4e8abaf5c1f9032d684e3
 │
 ├── pipeline/                   # Data processing pipeline
 │   ├── ingest/
@@ -192,20 +133,10 @@ chhaon/
 ├── reports/                    # PDF report generation
 │   ├── generator.py
 │   └── templates/
-<<<<<<< HEAD
 │
 ├── scripts/                    # Utility scripts
 │
 ├── tests/                      # Project tests
-=======
-│       └── thermal_audit.html
-│
-├── scripts/                    # Utility scripts
-│   ├── build_heatmaps.py
-│   └── rebuild_city_grids.py
-│
-├── tests/                      # Tests
->>>>>>> 1fe3c8d5c84460de44d4e8abaf5c1f9032d684e3
 │
 ├── web/                        # Next.js frontend
 │   ├── src/
