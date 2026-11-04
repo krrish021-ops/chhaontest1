@@ -1,0 +1,209 @@
+# Chhaon — Pan-India City Registry
+
+cities:
+  india:
+    name: "All India (National)"
+    name_mr: "भारत (राष्ट्रीय)"
+    state: "Pan-India"
+    climate_zone: "All 5 Indian Climate Zones"
+    cell_prefix: "IN"
+    bbox: [68.10, 8.05, 97.40, 37.10]
+    buffer_km: 50
+    timezone: "Asia/Kolkata"
+    language: "hi"
+    ward_source: "osm"
+    ward_count_approx: 750
+    priority: 0
+    notes: "Pan-India national thermal grid covering all states and climate zones."
+  nagpur:
+    name: "Nagpur"
+    name_mr: "नागपूर"
+    state: "Maharashtra"
+    climate_zone: "Hot & Dry"
+    cell_prefix: "C"
+    bbox: [78.90, 21.05, 79.25, 21.25]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 1
+    notes: "Hottest city in central India. First Heat Action Plan (HAP) city in India (2013)."
+
+  pune:
+    name: "Pune"
+    name_mr: "पुणे"
+    state: "Maharashtra"
+    climate_zone: "Temperate / Moderate"
+    cell_prefix: "P"
+    bbox: [73.76, 18.44, 73.96, 18.60]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 2
+    notes: "Fast-growing plateau metro. Rapid IT-corridor conversion of farmland to concrete."
+
+  delhi:
+    name: "Delhi"
+    name_mr: "दिल्ली"
+    state: "NCT of Delhi"
+    climate_zone: "Composite"
+    cell_prefix: "DL"
+    bbox: [77.08, 28.52, 77.30, 28.72]
+    buffer_km: 25
+    timezone: "Asia/Kolkata"
+    language: "hi"
+    ward_source: "osm"
+    ward_count_approx: 250
+    priority: 3
+    notes: "National Capital Territory. Severe summer heatwaves and dense urban core."
+
+  mumbai:
+    name: "Mumbai"
+    name_mr: "मुंबई"
+    state: "Maharashtra"
+    climate_zone: "Warm & Humid (Coastal)"
+    cell_prefix: "MB"
+    bbox: [72.80, 18.92, 72.97, 19.22]
+    buffer_km: 15
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 227
+    priority: 4
+    notes: "High-density coastal megacity with extreme impervious surface fraction."
+
+  bengaluru:
+    name: "Bengaluru"
+    name_mr: "बेंगलुरु"
+    state: "Karnataka"
+    climate_zone: "Temperate / Moderate"
+    cell_prefix: "BL"
+    bbox: [77.50, 12.90, 77.70, 13.06]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "kn"
+    ward_source: "osm"
+    ward_count_approx: 198
+    priority: 5
+    notes: "Deccan plateau metro. Historic lake and canopy loss driving rapid warming."
+
+  ahmedabad:
+    name: "Ahmedabad"
+    name_mr: "अहमदाबाद"
+    state: "Gujarat"
+    climate_zone: "Hot & Dry"
+    cell_prefix: "AH"
+    bbox: [72.50, 22.96, 72.66, 23.10]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "gu"
+    ward_source: "osm"
+    ward_count_approx: 192
+    priority: 6
+    notes: "South Asia's pioneer Heat Action Plan city; extreme pre-monsoon LST."
+
+  hyderabad:
+    name: "Hyderabad"
+    name_mr: "हैदराबाद"
+    state: "Telangana"
+    climate_zone: "Composite / Semi-Arid"
+    cell_prefix: "HY"
+    bbox: [78.38, 17.34, 78.56, 17.50]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "te"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 7
+    notes: "Semi-arid Deccan metro with rocky terrain and rapid western IT expansion."
+
+  chennai:
+    name: "Chennai"
+    name_mr: "चेन्नई"
+    state: "Tamil Nadu"
+    climate_zone: "Warm & Humid (Coastal)"
+    cell_prefix: "CH"
+    bbox: [80.18, 12.97, 80.30, 13.15]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "ta"
+    ward_source: "osm"
+    ward_count_approx: 200
+    priority: 8
+    notes: "Coastal metro with high nighttime humidity and wetland encroachment."
+
+  kolkata:
+    name: "Kolkata"
+    name_mr: "कोलकाता"
+    state: "West Bengal"
+    climate_zone: "Warm & Humid"
+    cell_prefix: "KL"
+    bbox: [88.30, 22.48, 88.43, 22.63]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "bn"
+    ward_source: "osm"
+    ward_count_approx: 144
+    priority: 9
+    notes: "Dense eastern megacity bordered by the East Kolkata Wetlands."
+
+  jaipur:
+    name: "Jaipur"
+    name_mr: "जयपुर"
+    state: "Rajasthan"
+    climate_zone: "Hot & Dry"
+    cell_prefix: "JP"
+    bbox: [75.72, 26.82, 75.88, 26.98]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "hi"
+    ward_source: "osm"
+    ward_count_approx: 150
+    priority: 10
+    notes: "Arid desert-fringe capital with intense daytime radiative heating."
+
+  lucknow:
+    name: "Lucknow"
+    name_mr: "लखनऊ"
+    state: "Uttar Pradesh"
+    climate_zone: "Composite"
+    cell_prefix: "LK"
+    bbox: [80.87, 26.78, 81.03, 26.93]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "hi"
+    ward_source: "osm"
+    ward_count_approx: 110
+    priority: 11
+    notes: "Indo-Gangetic plain capital experiencing rapid peri-urban sprawl."
+
+  aurangabad:
+    name: "Chhatrapati Sambhajinagar"
+    name_mr: "छत्रपती संभाजीनगर"
+    state: "Maharashtra"
+    climate_zone: "Hot & Dry (Semi-Arid)"
+    cell_prefix: "AU"
+    bbox: [75.25, 19.82, 75.42, 19.95]
+    buffer_km: 20
+    timezone: "Asia/Kolkata"
+    language: "mr"
+    ward_source: "osm"
+    ward_count_approx: 115
+    priority: 12
+    notes: "Marathwada industrial hub. Semi-arid, water-scarce."
+
+analysis:
+  modis_start_year: 2003
+  modis_end_year: 2025
+  primary_months: [3, 4, 5, 6]
+  secondary_months: [10, 11]
+  monsoon_months: [6, 7, 8, 9]
+  rural_reference:
+    min_buffer_km: 10
+    max_buffer_km: 30
+    max_elevation_diff_m: 100
+    max_slope_deg: 10
+    max_built_fraction: 0.05

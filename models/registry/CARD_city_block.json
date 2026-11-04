@@ -1,0 +1,46 @@
+{
+  "protocol": "City-Block Cross-Validation (TRD \u00a77.4 V3)",
+  "folds": [
+    {
+      "train_city": "Nagpur",
+      "test_city": "Pune",
+      "mae": 0.8018,
+      "rmse": 1.0331,
+      "r2": -0.1081,
+      "test_rows": 20
+    },
+    {
+      "train_city": "Pune",
+      "test_city": "Nagpur",
+      "mae": 1.4122,
+      "rmse": 1.7729,
+      "r2": -0.2894,
+      "test_rows": 3284
+    }
+  ],
+  "mean_held_out_mae": 1.107,
+  "mean_held_out_r2": -0.1987,
+  "features": [
+    "frac_built",
+    "frac_tree",
+    "frac_water",
+    "frac_crop",
+    "frac_grass",
+    "ndvi",
+    "ndbi",
+    "mndwi",
+    "albedo",
+    "building_height_mean",
+    "svf_proxy",
+    "night_lights_mean",
+    "era5_t2m_c_anomaly",
+    "era5_dewpoint_depression_anomaly",
+    "era5_wind_speed_anomaly",
+    "era5_precip_mm_anomaly",
+    "era5_solar_mj_anomaly",
+    "era5_soil_moist_anomaly",
+    "month"
+  ],
+  "monotone_constraints": true,
+  "interpretation": "Evaluates model on cities it has never seen during training."
+}
