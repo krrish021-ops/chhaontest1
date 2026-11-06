@@ -4,50 +4,9 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import HeatMap, {
   ThermalLayerKey,
   getLayerFieldName,
-  getLayerDisplayTitle,
 } from "@/components/map/HeatMap";
 import { INDIAN_CITIES, IndianCityEntry } from "@/lib/indianCities";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-interface JurisdictionOption {
-  id: string;
-  label: string;
-  scaleLabel: string;
-  center: [number, number];
-  zoom: number;
-}
-
-const JURISDICTIONS: JurisdictionOption[] = [
-  {
-    id: "india",
-    label: "All India — National Monitoring Grid",
-    scaleLabel: "70 km Regional Macro-Grid",
-    center: [79.0, 22.5],
-    zoom: 4.5,
-  },
-  {
-    id: "delhi",
-    label: "Delhi NCT — Municipal Grid",
-    scaleLabel: "1 km Ward-Level Grid (575 zones)",
-    center: [77.19, 28.62],
-    zoom: 10.6,
-  },
-  {
-    id: "nagpur",
-    label: "Nagpur, Maharashtra — Municipal Grid",
-    scaleLabel: "1 km Ward-Level Grid (229 zones)",
-    center: [79.0882, 21.1458],
-    zoom: 11.2,
-  },
-  {
-    id: "pune",
-    label: "Pune, Maharashtra — Municipal Grid",
-    scaleLabel: "1 km Ward-Level Grid (414 zones)",
-    center: [73.8567, 18.5204],
-    zoom: 11.0,
-  },
-];
+import { JURISDICTIONS, JurisdictionOption } from "@/lib/jurisdictions";
 
 const LAYER_OPTIONS: {
   key: ThermalLayerKey;
@@ -133,7 +92,6 @@ function getSeverityMeta(suhii: number | null) {
 export default function ChhaonWorkspace() {
   const [cityId, setCityId] = useState<string>("india");
   const [geojsonData, setGeojsonData] = useState<any>(null);
-  const [loadingMap, setLoadingMap] = useState<boolean>(true);
   const [activeLayer, setActiveLayer] = useState<ThermalLayerKey>("observed");
   const [opacity, setOpacity] = useState<number>(0.55);
   const [basemap, setBasemap] = useState<"dark" | "streets">("dark");
@@ -142,66 +100,40 @@ export default function ChhaonWorkspace() {
   // Selection & Navigation State
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
   const [focusedCity, setFocusedCity] = useState<IndianCityEntry | null>(null);
-  const [directoryTab, setDirectoryTab] = useState<"cities" | "rankings">("cities");
+  const [directoryTab, setDirectoryTab] = useState<"rankings" | "states" | "cities">("rankings");
   const [dossierTab, setDossierTab] = useState<"summary" | "drivers" | "simulator">("summary");
-  const [showBottomTable, setShowBottomTable] = useState<boolean>(false);
   const [showMethodology, setShowMethodology] = useState<boolean>(false);
+  const [showAuditModal, setShowAuditModal] = useState<boolean>(false);
 
   // Search State
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
-  const [osmSuggestions, setOsmSuggestions] = useState<IndianCityEntry[]>([]);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
   // Cooling Simulator Sliders
-  const [simTreeAdd, setSimTreeAdd] = useState<number>(12);
-  const [simCoolRoof, setSimCoolRoof] = useState<number>(25);
-  const [simWaterAdd, setSimWaterAdd] = useState<number>(4);
+  const [simTreeAdd, setSimTreeAdd] = useState<number>(15);
+  const [simCoolRoof, setSimCoolRoof] = useState<number>(30);
+  const [simWaterAdd, setSimWaterAdd] = useState<number>(5);
 
   const currentJurisdiction = useMemo(
     () => JURISDICTIONS.find((j) => j.id === cityId) || JURISDICTIONS[0],
     [cityId]
   );
 
-  // Load GeoJSON data (from static public demo or backend API)
+  // Load GeoJSON data directly from static public/demo files (works on Vercel & localhost)
   useEffect(() => {
     let cancelled = false;
-    setLoadingMap(true);
-
-    async function loadGeoJSON() {
-      try {
-        // Primary fast load from enriched public demo file or backend endpoint
-        const res = await fetch(`/demo/${cityId}_heatmap.geojson`);
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) {
-            setGeojsonData(data);
-            setLoadingMap(false);
-            return;
-          }
-        }
-      } catch {}
-
-      try {
-        const res2 = await fetch(`${API_BASE}/api/v1/heat/${cityId}/geojson?layer=observed`);
-        if (res2.ok) {
-          const data = await res2.json();
-          if (!cancelled) setGeojsonData(data);
-        }
-      } catch (e) {
-        console.error("Failed to load GeoJSON:", e);
-      } finally {
-        if (!cancelled) setLoadingMap(false);
-      }
-    }
-
-    loadGeoJSON();
+    fetch(`/demo/${cityId}_heatmap.geojson`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setGeojsonData(data);
+      })
+      .catch((err) => console.error("Failed to load GeoJSON:", err));
     return () => {
       cancelled = true;
     };
   }, [cityId]);
 
-  // Close search dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
@@ -212,45 +144,19 @@ export default function ChhaonWorkspace() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Live OpenStreetMap geocoding fallback for smaller Indian towns
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length < 3) {
-      setOsmSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-            q + ", India"
-          )}&format=json&limit=4`
-        );
-        if (!res.ok) return;
-        const arr = await res.json();
-        setOsmSuggestions(
-          arr.map((it: any) => {
-            const parts = (it.display_name || "").split(",");
-            return {
-              name: parts[0]?.trim() || q,
-              state: parts[1]?.trim() || "India",
-              lat: parseFloat(it.lat),
-              lon: parseFloat(it.lon),
-            };
-          })
-        );
-      } catch {}
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
   const activeField = useMemo(() => getLayerFieldName(activeLayer), [activeLayer]);
 
   const allCells = useMemo(() => {
     if (!geojsonData?.features) return [];
     return geojsonData.features
       .map((f: any) => f.properties)
-      .filter((p: any) => p && p[activeField] !== null && p[activeField] !== undefined && !Number.isNaN(Number(p[activeField])));
+      .filter(
+        (p: any) =>
+          p &&
+          p[activeField] !== null &&
+          p[activeField] !== undefined &&
+          !Number.isNaN(Number(p[activeField]))
+      );
   }, [geojsonData, activeField]);
 
   const sortedCells = useMemo(() => {
@@ -262,13 +168,8 @@ export default function ChhaonWorkspace() {
     const found = geojsonData.features.find(
       (f: any) => String(f.properties?.cell_id) === String(selectedCellId)
     );
-    if (!found) return null;
-    const props = { ...found.properties };
-    if (focusedCity && cityId === "india") {
-      props.display_title = `${focusedCity.name}, ${focusedCity.state}`;
-    }
-    return props;
-  }, [selectedCellId, geojsonData, focusedCity, cityId]);
+    return found ? { ...found.properties } : null;
+  }, [selectedCellId, geojsonData]);
 
   // Regional KPIs for the currently active thermal layer
   const kpiStats = useMemo(() => {
@@ -276,87 +177,70 @@ export default function ChhaonWorkspace() {
     const vals = allCells.map((c: any) => Number(c[activeField]));
     const mean = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
     const max = Math.max(...vals);
+    const meanLstDay =
+      allCells.reduce((a: number, c: any) => a + Number(c.lst_day ?? 41), 0) /
+      allCells.length;
+    const meanBuilt =
+      (allCells.reduce((a: number, c: any) => a + Number(c.frac_built ?? 0.1), 0) /
+        allCells.length) *
+      100;
+    const meanTree =
+      (allCells.reduce((a: number, c: any) => a + Number(c.frac_tree ?? 0.15), 0) /
+        allCells.length) *
+      100;
     const hotspots = vals.filter((v: number) => v >= 2.5).length;
     return {
       mean: `${mean >= 0 ? "+" : ""}${mean.toFixed(2)} °C`,
       max: `${max >= 0 ? "+" : ""}${max.toFixed(2)} °C`,
+      meanLstDay: `${meanLstDay.toFixed(1)} °C`,
+      meanBuilt: `${meanBuilt.toFixed(1)}%`,
+      meanTree: `${meanTree.toFixed(1)}%`,
       hotspots,
       total: vals.length,
     };
   }, [allCells, activeField]);
 
-  // Enrich Indian Cities directory with live thermal values from the nearest cell
-  const enrichedCityDirectory = useMemo(() => {
+  // Search matches across States, Cities, and Current Grid Zones
+  const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const baseList = q
-      ? [
-          ...INDIAN_CITIES.filter(
-            (c) => c.name.toLowerCase().includes(q) || c.state.toLowerCase().includes(q)
-          ),
-          ...osmSuggestions.filter(
-            (o) => !INDIAN_CITIES.some((c) => c.name.toLowerCase() === o.name.toLowerCase())
-          ),
-        ]
-      : INDIAN_CITIES;
+    const matchedJurisdictions = JURISDICTIONS.filter(
+      (j) => !q || j.label.toLowerCase().includes(q)
+    );
+    const matchedCities = INDIAN_CITIES.filter(
+      (c) => !q || c.name.toLowerCase().includes(q) || c.state.toLowerCase().includes(q)
+    );
+    return {
+      jurisdictions: matchedJurisdictions.slice(0, 8),
+      cities: matchedCities.slice(0, 10),
+    };
+  }, [searchQuery]);
 
-    return baseList.map((city) => {
-      let nearestCell: any = null;
-      let bestD2 = 1e18;
-      for (const c of allCells) {
-        const d2 =
-          (city.lat - Number(c.centroid_lat ?? 0)) ** 2 +
-          (city.lon - Number(c.centroid_lon ?? 0)) ** 2;
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          nearestCell = c;
-        }
-      }
-      const val = nearestCell ? Number(nearestCell[activeField]) : null;
-      const lstDay = nearestCell?.lst_day != null ? Number(nearestCell.lst_day) : null;
-      return {
-        ...city,
-        cell_id: nearestCell?.cell_id || null,
-        suhii: val,
-        lst_day: lstDay,
-      };
-    });
-  }, [allCells, activeField, searchQuery, osmSuggestions]);
-
-  // Select any Indian city from search or directory
+  // Switch straight to a City's 1km grid OR its State grid (just like Nagpur & Pune!)
   const handleSelectCity = (city: IndianCityEntry) => {
     setSearchOpen(false);
+    if (city.city_id && JURISDICTIONS.some((j) => j.id === city.city_id)) {
+      setCityId(city.city_id);
+      setSelectedCellId(null);
+      setFocusedCity(null);
+      return;
+    }
+    if (city.state_id && JURISDICTIONS.some((j) => j.id === city.state_id)) {
+      setCityId(city.state_id);
+      setFocusedCity(city);
+      setSelectedCellId(null);
+      return;
+    }
     setFocusedCity(city);
-
-    if (cityId !== "india" && city.city_id !== cityId) {
-      setCityId("india");
-    }
-
-    // Find nearest cell in current GeoJSON
-    if (geojsonData?.features?.length) {
-      let bestCid: string | null = null;
-      let bestD2 = 1e18;
-      for (const f of geojsonData.features) {
-        const p = f.properties || {};
-        const d2 =
-          (city.lat - Number(p.centroid_lat ?? 0)) ** 2 +
-          (city.lon - Number(p.centroid_lon ?? 0)) ** 2;
-        if (d2 < bestD2) {
-          bestD2 = d2;
-          bestCid = p.cell_id;
-        }
-      }
-      if (bestCid) setSelectedCellId(bestCid);
-    }
   };
 
-  // Compute plain-English SHAP attribution drivers for selected cell
   const shapDrivers = useMemo(() => {
-    if (!selectedCell) return [];
-    const built = Number(selectedCell.frac_built ?? 0);
-    const tree = Number(selectedCell.frac_tree ?? 0);
-    const water = Number(selectedCell.frac_water ?? 0);
-    const viirs = Number(selectedCell.night_lights_mean ?? 1.2);
-    const albedo = Number(selectedCell.albedo ?? 0.16);
+    const target = selectedCell || sortedCells[0];
+    if (!target) return [];
+    const built = Number(target.frac_built ?? 0.25);
+    const tree = Number(target.frac_tree ?? 0.12);
+    const water = Number(target.frac_water ?? 0.03);
+    const viirs = Number(target.night_lights_mean ?? 4.0);
+    const albedo = Number(target.albedo ?? 0.15);
 
     return [
       {
@@ -385,9 +269,8 @@ export default function ChhaonWorkspace() {
         impact: -Math.max(0.04, water * 2.6).toFixed(2),
       },
     ].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
-  }, [selectedCell]);
+  }, [selectedCell, sortedCells]);
 
-  // Physics-informed cooling intervention estimate
   const simulationResult = useMemo(() => {
     if (!selectedCell) return null;
     const baseSuhii = Number(selectedCell[activeField] ?? selectedCell.suhii_night ?? 2.0);
@@ -406,98 +289,97 @@ export default function ChhaonWorkspace() {
   const activeLayerMeta =
     LAYER_OPTIONS.find((l) => l.key === activeLayer) || LAYER_OPTIONS[0];
 
+  const municipalGrids = useMemo(
+    () => JURISDICTIONS.filter((j) => j.group === "Municipal 1 km Grids"),
+    []
+  );
+  const stateGrids = useMemo(
+    () => JURISDICTIONS.filter((j) => j.group === "Indian States (Regional Grids)"),
+    []
+  );
+
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0b0f19] text-slate-100 font-sans overflow-hidden">
       {/* ── TOP INSTITUTIONAL NAVIGATION BAR ────────────────────────────── */}
-      <header className="h-13 px-4 bg-[#0b0f19] border-b border-slate-800 flex items-center justify-between gap-4 shrink-0 z-40">
-        {/* System Identity + Jurisdiction Switcher */}
-        <div className="flex items-center gap-4">
+      <header className="h-13 px-4 bg-[#0b0f19] border-b border-slate-800 flex items-center justify-between gap-3 shrink-0 z-40 print:hidden">
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded bg-orange-600 flex items-center justify-center font-bold text-xs tracking-wider text-white">
               CH
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm tracking-tight text-white">
-                  CHHAON
-                </span>
-                <span className="text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium">
-                  Urban Heat GIS
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm tracking-tight text-white">
+                CHHAON
+              </span>
+              <span className="text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+                Urban Heat GIS
+              </span>
             </div>
           </div>
 
           <div className="h-5 w-[1px] bg-slate-800 hidden sm:block" />
 
-          {/* Jurisdiction Dropdown */}
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] uppercase tracking-wider text-slate-400 font-medium hidden md:inline">
-              Coverage:
-            </label>
-            <select
-              value={cityId}
-              onChange={(e) => {
-                setCityId(e.target.value);
-                setSelectedCellId(null);
-                setFocusedCity(null);
-              }}
-              className="bg-slate-900 border border-slate-700 hover:border-slate-600 text-xs text-slate-100 rounded px-2.5 py-1.5 font-medium focus:outline-none focus:border-orange-500"
-            >
-              {JURISDICTIONS.map((j) => (
+          {/* Grouped Jurisdiction Dropdown (All India + 12 Municipal Cities + 21 States) */}
+          <select
+            value={cityId}
+            onChange={(e) => {
+              setCityId(e.target.value);
+              setSelectedCellId(null);
+              setFocusedCity(null);
+            }}
+            className="bg-slate-900 border border-slate-700 hover:border-orange-500/70 text-xs text-slate-100 rounded px-2.5 py-1.5 font-medium focus:outline-none focus:border-orange-500 max-w-[270px]"
+          >
+            <optgroup label="National Monitoring">
+              <option value="india">All India — National Grid (598 zones)</option>
+            </optgroup>
+            <optgroup label="Municipal 1 km Ward Grids (Like Nagpur & Pune)">
+              {municipalGrids.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.label}
                 </option>
               ))}
-            </select>
-          </div>
+            </optgroup>
+            <optgroup label="Indian States — Detailed State Grids">
+              {stateGrids.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.label}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+
+          {cityId !== "india" && (
+            <button
+              onClick={() => {
+                setCityId("india");
+                setSelectedCellId(null);
+                setFocusedCity(null);
+              }}
+              className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium shrink-0"
+            >
+              ← All India
+            </button>
+          )}
         </div>
 
-        {/* Center Search Input for Any Indian City or District */}
-        <div ref={searchBoxRef} className="relative flex-1 max-w-md">
-          <div className="relative flex items-center">
-            <svg
-              className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onFocus={() => setSearchOpen(true)}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setSearchOpen(true);
-              }}
-              placeholder="Locate city or district in India (e.g., Bhopal, Jaipur, Surat, Lucknow)..."
-              className="w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded pl-8 pr-16 py-1.5 text-xs text-slate-100 placeholder-slate-400 focus:outline-none"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setFocusedCity(null);
-                }}
-                className="absolute right-2 text-[11px] text-slate-400 hover:text-white px-1.5 py-0.5"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+        {/* Search Input for Any State, City, or District */}
+        <div ref={searchBoxRef} className="relative flex-1 max-w-sm">
+          <input
+            type="text"
+            value={searchQuery}
+            onFocus={() => setSearchOpen(true)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSearchOpen(true);
+            }}
+            placeholder="Search any State or City (e.g. Maharashtra, Rajasthan, Bhopal, Pune)..."
+            className="w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded px-3 py-1.5 text-xs text-slate-100 placeholder-slate-400 focus:outline-none"
+          />
 
-          {/* Search Autocomplete Dropdown */}
           {searchOpen && (
             <div className="absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded shadow-2xl max-h-80 overflow-y-auto z-50 divide-y divide-slate-800">
-              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-950 flex justify-between">
-                <span>Indian Cities & Districts ({enrichedCityDirectory.length})</span>
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-orange-400 bg-slate-950 flex justify-between">
+                <span>Dedicated State & Municipal Grids</span>
                 <button
                   onClick={() => setSearchOpen(false)}
                   className="text-slate-400 hover:text-white"
@@ -505,39 +387,49 @@ export default function ChhaonWorkspace() {
                   Close
                 </button>
               </div>
-              {enrichedCityDirectory.slice(0, 12).map((item, idx) => (
+              {searchResults.jurisdictions.map((j) => (
                 <button
-                  key={`${item.name}-${idx}`}
-                  onClick={() => handleSelectCity(item)}
-                  className="w-full px-3 py-2 text-left hover:bg-slate-800/90 flex items-center justify-between transition"
+                  key={j.id}
+                  onClick={() => {
+                    setCityId(j.id);
+                    setSelectedCellId(null);
+                    setFocusedCity(null);
+                    setSearchOpen(false);
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between transition"
                 >
                   <div>
-                    <div className="text-xs font-semibold text-white flex items-center gap-2">
-                      <span>{item.name}</span>
-                      <span className="text-slate-400 font-normal">{item.state}</span>
-                      {item.city_id && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-950 text-orange-300 border border-orange-800">
-                          1 km Grid Available
-                        </span>
-                      )}
-                    </div>
+                    <div className="text-xs font-semibold text-white">{j.label}</div>
+                    <div className="text-[10px] text-slate-400">{j.scaleLabel}</div>
                   </div>
-                  <div className="text-right font-mono text-xs">
-                    {item.suhii !== null ? (
-                      <span className="text-orange-400 font-semibold">
-                        {item.suhii >= 0 ? `+${item.suhii.toFixed(2)}` : item.suhii.toFixed(2)} °C
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">Locate →</span>
-                    )}
+                  <span className="text-[11px] text-orange-400 font-medium">
+                    Open Grid →
+                  </span>
+                </button>
+              ))}
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-950">
+                Cities & District Hubs
+              </div>
+              {searchResults.cities.map((c, i) => (
+                <button
+                  key={`${c.name}-${i}`}
+                  onClick={() => handleSelectCity(c)}
+                  className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between transition"
+                >
+                  <div>
+                    <div className="text-xs font-semibold text-white">{c.name}</div>
+                    <div className="text-[10px] text-slate-400">{c.state}</div>
                   </div>
+                  <span className="text-[11px] text-slate-300">
+                    {c.city_id ? "Open 1 km Grid →" : "Open State Grid →"}
+                  </span>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Right: Segmented Thermal Layer Switcher + Reports */}
+        {/* Right: Segmented Thermal Layer Switcher + Client-Side Audit PDF */}
         <div className="flex items-center gap-2">
           <div className="bg-slate-900 p-0.5 rounded border border-slate-800 flex items-center">
             {LAYER_OPTIONS.map((opt) => {
@@ -565,42 +457,37 @@ export default function ChhaonWorkspace() {
             Methodology
           </button>
 
-          <a
-            href={`${API_BASE}/api/v1/reports/${cityId === "india" ? "nagpur" : cityId}/pdf`}
-            target="_blank"
-            rel="noreferrer"
-            className="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 text-xs font-medium"
+          <button
+            onClick={() => setShowAuditModal(true)}
+            className="px-3 py-1.5 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow"
           >
             Audit PDF
-          </a>
+          </button>
         </div>
       </header>
 
       {/* ── MAIN WORKSPACE: DOCKED LEFT SIDEBAR + FULL MAP VIEWPORT ─────── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* ── DOCKED LEFT ANALYTICAL SIDEBAR (390px) ────────────────────── */}
-        <aside className="w-[390px] bg-[#0f172a] border-r border-slate-800 flex flex-col shrink-0 z-20">
+      <div className="flex flex-1 min-h-0 overflow-hidden print:hidden">
+        <aside className="w-[395px] bg-[#0f172a] border-r border-slate-800 flex flex-col shrink-0 z-20">
           {!selectedCell ? (
-            /* ── VIEW 1: REGIONAL OVERVIEW & CITY DIRECTORY ──────────── */
             <div className="flex flex-col h-full">
-              {/* Plain-English Orientation Banner */}
-              <div className="p-4 border-b border-slate-800 bg-slate-950/50">
+              {/* Active Jurisdiction Summary Header */}
+              <div className="p-4 border-b border-slate-800 bg-slate-950/60">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-orange-400">
-                    {activeLayerMeta.shortLabel} Dataset
+                    {currentJurisdiction.label}
                   </span>
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    {currentJurisdiction.scaleLabel}
-                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 mb-2">
+                  {currentJurisdiction.scaleLabel} · {activeLayerMeta.shortLabel}
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   {activeLayerMeta.description}
                 </p>
 
-                {/* Live Dataset KPIs */}
                 {kpiStats && (
                   <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800/80">
-                    <div className="bg-slate-900/90 border border-slate-800 rounded p-2">
+                    <div className="bg-slate-900 border border-slate-800 rounded p-2">
                       <div className="text-[10px] uppercase text-slate-400">
                         Mean Night Heat
                       </div>
@@ -608,7 +495,7 @@ export default function ChhaonWorkspace() {
                         {kpiStats.mean}
                       </div>
                     </div>
-                    <div className="bg-slate-900/90 border border-slate-800 rounded p-2">
+                    <div className="bg-slate-900 border border-slate-800 rounded p-2">
                       <div className="text-[10px] uppercase text-slate-400">
                         Peak Hotspot
                       </div>
@@ -616,30 +503,23 @@ export default function ChhaonWorkspace() {
                         {kpiStats.max}
                       </div>
                     </div>
-                    <div className="bg-slate-900/90 border border-slate-800 rounded p-2">
+                    <div className="bg-slate-900 border border-slate-800 rounded p-2">
                       <div className="text-[10px] uppercase text-slate-400">
-                        Zones &gt; +2.5°C
+                        Hotspots &gt; 2.5°C
                       </div>
                       <div className="text-sm font-bold font-mono text-orange-400 mt-0.5">
-                        {kpiStats.hotspots} <span className="text-[10px] text-slate-400 font-normal">/ {kpiStats.total}</span>
+                        {kpiStats.hotspots}{" "}
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          / {kpiStats.total}
+                        </span>
                       </div>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Directory Mode Tabs */}
-              <div className="grid grid-cols-2 border-b border-slate-800 bg-slate-950 text-xs font-semibold">
-                <button
-                  onClick={() => setDirectoryTab("cities")}
-                  className={`py-2.5 border-b-2 transition ${
-                    directoryTab === "cities"
-                      ? "border-orange-500 text-white bg-slate-900/60"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Indian Cities ({enrichedCityDirectory.length})
-                </button>
+              {/* Sidebar Navigation Tabs */}
+              <div className="grid grid-cols-3 border-b border-slate-800 bg-slate-950 text-xs font-semibold">
                 <button
                   onClick={() => setDirectoryTab("rankings")}
                   className={`py-2.5 border-b-2 transition ${
@@ -648,59 +528,34 @@ export default function ChhaonWorkspace() {
                       : "border-transparent text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  Hottest Zones ({sortedCells.length})
+                  Zones ({sortedCells.length})
+                </button>
+                <button
+                  onClick={() => setDirectoryTab("states")}
+                  className={`py-2.5 border-b-2 transition ${
+                    directoryTab === "states"
+                      ? "border-orange-500 text-white bg-slate-900/60"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  All States ({stateGrids.length})
+                </button>
+                <button
+                  onClick={() => setDirectoryTab("cities")}
+                  className={`py-2.5 border-b-2 transition ${
+                    directoryTab === "cities"
+                      ? "border-orange-500 text-white bg-slate-900/60"
+                      : "border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  1 km Cities ({municipalGrids.length})
                 </button>
               </div>
 
-              {/* Scrollable Directory List */}
+              {/* Directory List */}
               <div className="flex-1 overflow-y-auto divide-y divide-slate-800/70">
-                {directoryTab === "cities" ? (
-                  enrichedCityDirectory.map((city, i) => {
-                    const suhii = city.suhii;
-                    return (
-                      <div
-                        key={`${city.name}-${i}`}
-                        onClick={() => handleSelectCity(city)}
-                        className="px-4 py-2.5 hover:bg-slate-800/60 cursor-pointer flex items-center justify-between transition"
-                      >
-                        <div>
-                          <div className="text-xs font-semibold text-slate-100 flex items-center gap-2">
-                            <span>{city.name}</span>
-                            {city.city_id && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-orange-300 border border-slate-700 font-normal">
-                                1 km Grid
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            {city.state}
-                            {city.lst_day !== null && ` · Day LST: ${city.lst_day.toFixed(1)} °C`}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          {suhii !== null ? (
-                            <div
-                              className={`text-xs font-mono font-bold ${
-                                suhii >= 3.0
-                                  ? "text-red-400"
-                                  : suhii >= 1.5
-                                  ? "text-orange-400"
-                                  : "text-emerald-400"
-                              }`}
-                            >
-                              {suhii >= 0 ? `+${suhii.toFixed(2)}` : suhii.toFixed(2)} °C
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-500">—</span>
-                          )}
-                          <div className="text-[10px] text-slate-400">Inspect →</div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  sortedCells.slice(0, 100).map((cell: any, idx: number) => {
+                {directoryTab === "rankings" &&
+                  sortedCells.slice(0, 120).map((cell: any, idx: number) => {
                     const val = Number(cell[activeField]);
                     return (
                       <div
@@ -717,8 +572,11 @@ export default function ChhaonWorkspace() {
                               {cell.location_name || cell.cell_id}
                             </div>
                             <div className="text-[11px] text-slate-400 font-mono">
-                              Zone {cell.cell_id} · Day LST:{" "}
-                              {cell.lst_day != null ? `${Number(cell.lst_day).toFixed(1)} °C` : "—"}
+                              Day LST:{" "}
+                              {cell.lst_day != null
+                                ? `${Number(cell.lst_day).toFixed(1)} °C`
+                                : "—"}{" "}
+                              · Built: {Math.round(Number(cell.frac_built ?? 0) * 100)}%
                             </div>
                           </div>
                         </div>
@@ -735,35 +593,78 @@ export default function ChhaonWorkspace() {
                         </div>
                       </div>
                     );
-                  })
-                )}
+                  })}
+
+                {directoryTab === "states" &&
+                  stateGrids.map((st) => (
+                    <div
+                      key={st.id}
+                      onClick={() => {
+                        setCityId(st.id);
+                        setSelectedCellId(null);
+                        setDirectoryTab("rankings");
+                      }}
+                      className={`px-4 py-3 hover:bg-slate-800/60 cursor-pointer flex items-center justify-between transition ${
+                        cityId === st.id ? "bg-orange-950/30 border-l-2 border-orange-500" : ""
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-semibold text-white">
+                          {st.label.replace(" — State Thermal Grid", "")}
+                        </div>
+                        <div className="text-[11px] text-slate-400">{st.scaleLabel}</div>
+                      </div>
+                      <span className="text-xs text-orange-400 font-medium">
+                        Open State Grid →
+                      </span>
+                    </div>
+                  ))}
+
+                {directoryTab === "cities" &&
+                  municipalGrids.map((cg) => (
+                    <div
+                      key={cg.id}
+                      onClick={() => {
+                        setCityId(cg.id);
+                        setSelectedCellId(null);
+                        setDirectoryTab("rankings");
+                      }}
+                      className={`px-4 py-3 hover:bg-slate-800/60 cursor-pointer flex items-center justify-between transition ${
+                        cityId === cg.id ? "bg-orange-950/30 border-l-2 border-orange-500" : ""
+                      }`}
+                    >
+                      <div>
+                        <div className="text-xs font-semibold text-white">
+                          {cg.label.replace(" (Municipal 1 km Grid)", "")}
+                        </div>
+                        <div className="text-[11px] text-slate-400">{cg.scaleLabel}</div>
+                      </div>
+                      <span className="text-xs text-orange-400 font-medium">
+                        Open 1 km Grid →
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           ) : (
             /* ── VIEW 2: SELECTED LOCATION THERMAL DOSSIER ───────────── */
             <div className="flex flex-col h-full">
-              {/* Dossier Header */}
               <div className="p-4 border-b border-slate-800 bg-slate-950">
                 <button
-                  onClick={() => {
-                    setSelectedCellId(null);
-                    setFocusedCity(null);
-                  }}
+                  onClick={() => setSelectedCellId(null)}
                   className="text-xs text-slate-400 hover:text-white flex items-center gap-1 mb-2.5"
                 >
                   <span>←</span>
-                  <span>Back to City Directory</span>
+                  <span>Back to {currentJurisdiction.label}</span>
                 </button>
 
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h2 className="text-base font-bold text-white leading-snug">
-                      {selectedCell.display_title ||
-                        selectedCell.location_name ||
-                        selectedCell.cell_id}
+                      {selectedCell.location_name || selectedCell.cell_id}
                     </h2>
                     <div className="text-xs text-slate-400 font-mono mt-0.5">
-                      Zone ID: {selectedCell.cell_id} ·{" "}
+                      Zone {selectedCell.cell_id} · {selectedCell.state_name || "India"} ·{" "}
                       {selectedCell.centroid_lat?.toFixed(2)}°N,{" "}
                       {selectedCell.centroid_lon?.toFixed(2)}°E
                     </div>
@@ -777,27 +678,35 @@ export default function ChhaonWorkspace() {
                   </span>
                 </div>
 
-                {/* Offer 1km High-Res Grid switch if available */}
-                {cityId === "india" &&
-                  ["Delhi", "New Delhi", "Nagpur", "Pune"].includes(
-                    focusedCity?.name || selectedCell.nearest_city || ""
-                  ) && (
-                    <button
-                      onClick={() => {
-                        const target = (
-                          focusedCity?.name ||
-                          selectedCell.nearest_city ||
-                          ""
-                        ).toLowerCase();
-                        const nextId = target.includes("delhi") ? "delhi" : target;
-                        setCityId(nextId);
-                        setSelectedCellId(null);
-                      }}
-                      className="mt-3 w-full py-1.5 px-3 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition"
-                    >
-                      Open 1 km Ward-Level Street Grid for {selectedCell.nearest_city} →
-                    </button>
-                  )}
+                {/* Quick button to jump from All-India view into the State's or City's dedicated high-res grid */}
+                {cityId === "india" && (
+                  <div className="flex gap-2 mt-3">
+                    {JURISDICTIONS.some(
+                      (j) =>
+                        j.id ===
+                        `state_${(selectedCell.state_name || "")
+                          .toLowerCase()
+                          .replace(/\s+/g, "_")
+                          .replace("&", "")}`
+                    ) && (
+                      <button
+                        onClick={() => {
+                          const stSlug = `state_${(selectedCell.state_name || "")
+                            .toLowerCase()
+                            .replace(/\s+/g, "_")}`;
+                          const match = JURISDICTIONS.find((j) => j.id === stSlug);
+                          if (match) {
+                            setCityId(match.id);
+                            setSelectedCellId(null);
+                          }
+                        }}
+                        className="flex-1 py-1.5 px-2.5 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition"
+                      >
+                        Open {selectedCell.state_name} State Grid →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Dossier Sub-Tabs */}
@@ -823,11 +732,9 @@ export default function ChhaonWorkspace() {
                 ))}
               </div>
 
-              {/* Dossier Body */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {dossierTab === "summary" && (
                   <>
-                    {/* Primary Active Layer Card */}
                     <div className="bg-slate-900 border border-slate-800 rounded p-3.5">
                       <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
                         <span>Extra Nighttime Urban Heat ({activeLayerMeta.shortLabel})</span>
@@ -842,16 +749,13 @@ export default function ChhaonWorkspace() {
                           {Number(selectedCell[activeField]) >= 0 ? "+" : ""}
                           {Number(selectedCell[activeField]).toFixed(2)} °C
                         </span>
-                        <span className="text-xs text-slate-400">
-                          vs. rural baseline
-                        </span>
+                        <span className="text-xs text-slate-400">vs. rural baseline</span>
                       </div>
                       <p className="text-xs text-slate-300 mt-2 leading-relaxed">
                         {getSeverityMeta(Number(selectedCell[activeField])).plainSummary}
                       </p>
                     </div>
 
-                    {/* Multi-Year Layer Comparison Strip (Click any to switch map) */}
                     <div className="bg-slate-900/70 border border-slate-800 rounded p-3">
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
                         Trajectory Across Datasets (Click to Switch Map)
@@ -885,7 +789,6 @@ export default function ChhaonWorkspace() {
                       </div>
                     </div>
 
-                    {/* Absolute Satellite Land Surface Temperatures */}
                     <div className="grid grid-cols-2 gap-2.5">
                       <div className="bg-slate-900 border border-slate-800 rounded p-3">
                         <div className="text-[10px] uppercase text-slate-400">
@@ -915,7 +818,6 @@ export default function ChhaonWorkspace() {
                       </div>
                     </div>
 
-                    {/* Land Cover Composition */}
                     <div className="bg-slate-900 border border-slate-800 rounded p-3.5 space-y-2.5">
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                         Surface Composition (ESA WorldCover 10m)
@@ -987,9 +889,7 @@ export default function ChhaonWorkspace() {
                               {pos ? `+${d.impact.toFixed(2)}` : d.impact.toFixed(2)} °C
                             </span>
                           </div>
-                          <div className="text-[11px] text-slate-400 mt-1">
-                            {d.detail}
-                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1">{d.detail}</div>
                         </div>
                       );
                     })}
@@ -1004,9 +904,7 @@ export default function ChhaonWorkspace() {
                       </div>
                       <div className="grid grid-cols-2 gap-3 mt-2.5">
                         <div>
-                          <div className="text-[10px] text-slate-400">
-                            Projected Cooling
-                          </div>
+                          <div className="text-[10px] text-slate-400">Projected Cooling</div>
                           <div className="text-xl font-bold font-mono text-emerald-400">
                             {simulationResult.totalCooling.toFixed(2)} °C
                           </div>
@@ -1095,12 +993,12 @@ export default function ChhaonWorkspace() {
             filterMode={filterMode}
           />
 
-          {/* Subtle Top-Left Map Filter Bar */}
+          {/* Top-Left Map Filter Bar */}
           <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-slate-950/90 border border-slate-800 rounded p-1 shadow">
             {(
               [
-                ["all", "All Monitored Zones"],
-                ["hotspots", "Hotspots Only (> +2.5 °C)"],
+                ["all", "All Zones"],
+                ["hotspots", "Hotspots (> +2.5 °C)"],
                 ["cool", "Cool / Baseline (< +0.5 °C)"],
               ] as [typeof filterMode, string][]
             ).map(([mode, label]) => (
@@ -1118,20 +1016,10 @@ export default function ChhaonWorkspace() {
             ))}
           </div>
 
-          {/* Compact Top-Right Map Style & Opacity Control */}
+          {/* Top-Right Map Style & Opacity Control */}
           <div className="absolute top-3 right-3 z-20 flex items-center gap-3 bg-slate-950/90 border border-slate-800 rounded px-3 py-1.5 shadow text-xs">
             <div className="flex items-center gap-1">
               <span className="text-slate-400 mr-1">Basemap:</span>
-              <button
-                onClick={() => setBasemap("streets")}
-                className={`px-2 py-0.5 rounded-sm ${
-                  basemap === "streets"
-                    ? "bg-slate-800 text-white font-semibold"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Light
-              </button>
               <button
                 onClick={() => setBasemap("dark")}
                 className={`px-2 py-0.5 rounded-sm ${
@@ -1141,6 +1029,16 @@ export default function ChhaonWorkspace() {
                 }`}
               >
                 Dark
+              </button>
+              <button
+                onClick={() => setBasemap("streets")}
+                className={`px-2 py-0.5 rounded-sm ${
+                  basemap === "streets"
+                    ? "bg-slate-800 text-white font-semibold"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Light
               </button>
             </div>
             <div className="h-3.5 w-[1px] bg-slate-800" />
@@ -1187,6 +1085,194 @@ export default function ChhaonWorkspace() {
         </main>
       </div>
 
+      {/* ── CLIENT-SIDE INSTITUTIONAL THERMAL AUDIT PDF GENERATOR MODAL ──── */}
+      {showAuditModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white">
+          <div className="bg-white text-slate-900 rounded max-w-4xl w-full max-h-[92vh] overflow-y-auto shadow-2xl p-8 print:max-h-none print:shadow-none print:p-4">
+            {/* Action Bar (Hidden when printing/saving to PDF) */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6 print:hidden">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-orange-600">
+                  Official Chhaon Thermal Audit Report
+                </span>
+                <p className="text-xs text-slate-500">
+                   Generated dynamically for {currentJurisdiction.label} (Works offline & on Vercel)
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow"
+                >
+                  Download / Save as PDF
+                </button>
+                <button
+                  onClick={() => setShowAuditModal(false)}
+                  className="px-3 py-2 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Report Body */}
+            <div className="space-y-6">
+              <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-end">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-widest text-orange-600">
+                    CHHAON (छांव) — URBAN HEAT INTELLIGENCE DOSSIER
+                  </div>
+                  <h1 className="text-2xl font-bold text-slate-900 mt-1">
+                    {currentJurisdiction.label}
+                  </h1>
+                  <div className="text-xs text-slate-600 mt-0.5">
+                    Coverage: {currentJurisdiction.scaleLabel} · Dataset: {activeLayerMeta.shortLabel} ({activeLayerMeta.subtitle})
+                  </div>
+                </div>
+                <div className="text-right text-xs text-slate-600 font-mono">
+                  <div>Report Year: 2026</div>
+                  <div>Sensor: NASA MODIS / ESA 10m</div>
+                </div>
+              </div>
+
+              {/* KPI Summary Grid */}
+              {kpiStats && (
+                <div className="grid grid-cols-5 gap-3">
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-[10px] uppercase text-slate-500 font-semibold">
+                      Mean Night SUHII
+                    </div>
+                    <div className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                      {kpiStats.mean}
+                    </div>
+                  </div>
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-[10px] uppercase text-slate-500 font-semibold">
+                      Peak Hotspot
+                    </div>
+                    <div className="text-lg font-bold font-mono text-red-600 mt-0.5">
+                      {kpiStats.max}
+                    </div>
+                  </div>
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-[10px] uppercase text-slate-500 font-semibold">
+                      Mean Day LST
+                    </div>
+                    <div className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                      {kpiStats.meanLstDay}
+                    </div>
+                  </div>
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-[10px] uppercase text-slate-500 font-semibold">
+                      Mean Built-Up
+                    </div>
+                    <div className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                      {kpiStats.meanBuilt}
+                    </div>
+                  </div>
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-[10px] uppercase text-slate-500 font-semibold">
+                      Mean Tree Canopy
+                    </div>
+                    <div className="text-lg font-bold font-mono text-emerald-700 mt-0.5">
+                      {kpiStats.meanTree}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Priority Hotspot Triage Table */}
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 mb-2">
+                  1. Priority Thermal Hotspot Triage (Top 15 Overheating Zones)
+                </h2>
+                <table className="w-full text-left border-collapse text-xs border border-slate-300">
+                  <thead className="bg-slate-100 text-slate-700 border-b border-slate-300">
+                    <tr>
+                      <th className="py-2 px-2.5">Rank</th>
+                      <th className="py-2 px-2.5">District / Sector</th>
+                      <th className="py-2 px-2.5">Zone ID</th>
+                      <th className="py-2 px-2.5">2024 Night SUHII</th>
+                      <th className="py-2 px-2.5">2031 BAU</th>
+                      <th className="py-2 px-2.5">Day LST</th>
+                      <th className="py-2 px-2.5">Built-Up</th>
+                      <th className="py-2 px-2.5">Canopy</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {sortedCells.slice(0, 15).map((c: any, i: number) => (
+                      <tr key={c.cell_id}>
+                        <td className="py-1.5 px-2.5 font-mono">#{i + 1}</td>
+                        <td className="py-1.5 px-2.5 font-semibold">
+                          {c.location_name || c.cell_id}
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono text-slate-600">
+                          {c.cell_id}
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono font-bold text-red-600">
+                          +{Number(c.suhii_night).toFixed(2)} °C
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono text-orange-700">
+                          +{Number(c.suhii_night_2031).toFixed(2)} °C
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono">
+                          {c.lst_day != null ? `${Number(c.lst_day).toFixed(1)} °C` : "—"}
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono">
+                          {Math.round(Number(c.frac_built ?? 0) * 100)}%
+                        </td>
+                        <td className="py-1.5 px-2.5 font-mono text-emerald-700">
+                          {Math.round(Number(c.frac_tree ?? 0) * 100)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Physical Attribution & Action Recommendations */}
+              <div className="grid grid-cols-2 gap-6 pt-2">
+                <div className="border border-slate-300 rounded p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2">
+                    2. Dominant Physical Heat Drivers (SHAP Attribution)
+                  </h3>
+                  <div className="space-y-2 text-xs">
+                    {shapDrivers.map((d) => (
+                      <div key={d.name} className="flex justify-between border-b border-slate-100 pb-1">
+                        <span>{d.name}</span>
+                        <span className="font-mono font-bold">
+                          {d.impact > 0 ? `+${d.impact.toFixed(2)}` : d.impact.toFixed(2)} °C
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border border-slate-300 rounded p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2">
+                    3. Recommended Heat Action Plan Interventions
+                  </h3>
+                  <ul className="list-disc list-inside text-xs text-slate-700 space-y-1.5 leading-relaxed">
+                    <li>
+                      <b>Targeted Ward Afforestation (+15% Canopy):</b> Prioritize top 15
+                      hotspot zones to achieve ~0.35 °C to 0.55 °C nocturnal cooling via
+                      evapotranspiration.
+                    </li>
+                    <li>
+                      <b>High-Albedo Cool Roofs (+30% Coverage):</b> Mandate SRI &gt; 78
+                      coatings on municipal, commercial, and high-density residential blocks.
+                    </li>
+                    <li>
+                      <b>Pervious Corridors &amp; Urban Water Bodies:</b> Restore urban
+                      lakes and permeable pavements to buffer pre-monsoon thermal peaks.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── METHODOLOGY MODAL ───────────────────────────────────────────── */}
       {showMethodology && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -1199,7 +1285,7 @@ export default function ChhaonWorkspace() {
                 onClick={() => setShowMethodology(false)}
                 className="text-xs text-slate-400 hover:text-white"
               >
-                Close ✕
+                Close
               </button>
             </div>
             <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
