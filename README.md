@@ -149,83 +149,9 @@ When a user simulates urban interventions (e.g., `+15% Tree Canopy`, `+30% Cool 
 
 ## 7. System Architecture & File-by-File Breakdown
 
-```text
-chhaontest1/
-├── config/
-│   ├── cities.yaml                 # Master registry: All-India + 12 municipal cities, bboxes, climate zones
-│   └── loader.py                   # Typed YAML configuration loader (get_all_cities, get_city_config)
-│
-├── pipeline/
-│   └── ingest/
-│       ├── ingest_city.py          # Universal 7-step GEE satellite extraction pipeline (--fast, --boundary-only)
-│       ├── gee_lst_suhii.py        # Legacy Nagpur/Pune MODIS LST & rural ring extractor
-│       ├── gee_lulc_worldcover.py  # ESA WorldCover 10m class fraction extractor
-│       ├── gee_morphology_ghsl.py  # JRC GHSL building height & SVF proxy extractor
-│       └── gee_spectral_viirs.py   # Sentinel-2 NDVI/NDBI/MNDWI/Albedo & VIIRS extractor
-│
-├── scripts/
-│   ├── build_heatmaps.py           # Joins *_grid.geojson with *_feature_matrix.parquet on cell_id
-│   └── rebuild_city_grids.py       # Quarantined safety stub (prevents accidental synthetic grid overwrites)
-│
-├── models/
-│   ├── registry/
-│   │   ├── lgbm_suhii_v1.pkl       # Trained LightGBM SUHII model artifact
-│   │   ├── scaler_v1.pkl           # Feature scaler artifact
-│   │   └── model_metadata.json     # Training metrics, feature list & provenance metadata
-│   ├── explain/
-│   │   └── shap_explainer.py       # Dynamic multi-city TreeSHAP attribution engine
-│   ├── transfer_function/
-│   │   └── scenario_engine.py      # Physics-informed counterfactual cooling simulator
-│   ├── temporal/
-│   │   └── era5_normalizer.py      # ERA5 synoptic weather normalization & BAU forecast offsets
-│   └── validation/
-│       └── spatial_cv.py           # Spatial block cross-validation & honest R²/RMSE evaluation
-│
-├── reports/
-│   ├── generator.py                # WeasyPrint + Jinja2 + Matplotlib PDF audit report generator
-│   └── templates/
-│       └── audit_report.html       # HTML/CSS print template for municipal thermal audits
-│
-├── api/
-│   ├── main.py                     # FastAPI application entrypoint, CORS & router registration
-│   ├── dependencies.py             # Shared city validation dependencies
-│   ├── routers/
-│   │   ├── spatial.py              # GET /api/v1/spatial/cities, /boundary, /grid
-│   │   ├── heat.py                 # GET /api/v1/heat/{city}/geojson, /rankings, /cells/{id}/shap
-│   │   ├── scenarios.py            # POST /api/v1/scenarios/{city}/simulate
-│   │   └── reports.py              # GET /api/v1/reports/{city}/pdf
-│   ├── services/
-│   │   ├── spatial_service.py      # Boundary & city metadata resolution
-│   │   ├── heat_service.py         # GeoJSON loading, NaN-safe hotspot sorting & SHAP dispatch
-│   │   └── scenario_service.py     # Scenario simulation service wrapper
-│   └── schemas/
-│       ├── heat.py                 # Pydantic v2 schemas for CityInfo, CellRanking, ShapExplanation
-│       └── scenario.py             # Pydantic v2 schemas for ScenarioRequest & ScenarioResponse
-│
-├── data/
-│   ├── boundaries/                 # Spatial grid & boundary GeoJSONs (india, delhi, pune, nagpur)
-│   ├── tables/                     # Multi-year satellite feature matrices (*.parquet)
-│   └── demo/                       # Enriched 4-layer GeoJSONs (*_heatmap*.geojson) & pre-built PDFs
-│
-└── web/
-    ├── next.config.js              # Next.js 14 build configuration (Vercel-ready)
-    ├── package.json                # Frontend dependencies (Next 14, React 18, MapLibre GL, Tailwind)
-    ├── public/
-    │   └── demo/                   # Static 4-layer GeoJSONs for instant zero-latency CDN/Vercel loading
-    └── src/
-        ├── app/
-        │   ├── layout.tsx          # Root dark-theme layout & typography
-        │   └── page.tsx            # Institutional GIS workspace: Top bar, Docked Sidebar, Dossier & Simulator
-        ├── components/
-        │   └── map/
-        │       └── HeatMap.tsx     # MapLibre GL canvas, layer switcher, city pins & label-underlay rendering
-        └── lib/
-            ├── indianCities.ts     # Gazetteer of 110+ Indian cities & district hubs with coordinates
-            ├── api.ts              # Backend API client helpers
-            └── types.ts            # TypeScript interfaces for GeoJSON features & thermal metrics
+[![Architecture diagram of krrish021-ops/chhaontest1](https://gitdiagram.com/krrish021-ops/chhaontest1/diagram.png)](https://gitdiagram.com/krrish021-ops/chhaontest1?utm_source=readme&utm_medium=picture)
 
-
-8. Satellite Data Sources & GEE Specifications
+## 8. Satellite Data Sources & GEE Specifications
 Sensor / Product	Earth Engine Asset ID	Spatial Resolution	Temporal Coverage	Extracted Features
 MODIS Terra LST	MODIS/061/MOD11A1	1,000 m	Daily (May 2020–2024)	lst_day, lst_night, suhii_day, suhii_night
 ESA WorldCover v200	ESA/WorldCover/v200/2021	10 m	Annual Baseline	frac_built, frac_tree, frac_water, frac_crop, frac_grass, frac_bare
@@ -248,7 +174,7 @@ nW⋅cm
 −1
  )
 ECMWF ERA5-Land	ECMWF/ERA5_LAND/MONTHLY_AGGR	~11,132 m	Monthly (May)	temp_2m, wind_speed_10m, rh for synoptic normalization
-9. Complete REST API Reference
+## 9. Complete REST API Reference
 When the FastAPI backend is running on http://localhost:8000, full interactive Swagger documentation is available at http://localhost:8000/docs.
 
 9.1 List Configured Jurisdictions
